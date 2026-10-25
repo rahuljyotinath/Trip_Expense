@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./db"
+import { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 
 test("defaults GitHub ledger to rahuljyotinath/Trip_Expense", () => {
   const previous = {

@@ -2,23 +2,19 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { Octokit } from "octokit"
 import { emptyStore, normalizeStore, type StorageMode, type Store } from "./types"
+import {
+  githubUrl,
+  resolveGithubTarget,
+  type GithubTarget,
+} from "./github-target"
+
+export { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
-const DEFAULT_REMOTE_PATH = "data/store.json"
-export const DEFAULT_GITHUB_REPO = "rahuljyotinath/Trip_Expense"
 
 type Loaded = {
   store: Store
   sha?: string
-}
-
-export type GithubTarget = {
-  owner: string
-  repo: string
-  fullName: string
-  branch: string
-  filePath: string
-  hasToken: boolean
 }
 
 export type GithubProbe = GithubTarget & {
@@ -39,31 +35,12 @@ function enqueue<T>(job: () => Promise<T>) {
   return run
 }
 
-export function resolveGithubTarget(): GithubTarget {
-  const raw = (process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO).trim()
-  const [owner = "", name = ""] = raw.split("/")
-  const fullName = owner && name ? `${owner}/${name}` : DEFAULT_GITHUB_REPO
-  const [safeOwner, safeName] = fullName.split("/")
-  return {
-    owner: safeOwner,
-    repo: safeName,
-    fullName,
-    branch: process.env.GITHUB_BRANCH?.trim() || "main",
-    filePath: process.env.GITHUB_DB_PATH?.trim() || DEFAULT_REMOTE_PATH,
-    hasToken: Boolean(process.env.GITHUB_TOKEN?.trim()),
-  }
-}
-
 function githubConfig() {
   const token = process.env.GITHUB_TOKEN?.trim()
   if (!token) return null
   const target = resolveGithubTarget()
   if (!target.owner || !target.repo) return null
   return { token, ...target }
-}
-
-function githubUrl(target: GithubTarget) {
-  return `https://github.com/${target.fullName}`
 }
 
 function githubErrorMessage(error: unknown) {
