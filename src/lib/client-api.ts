@@ -1,13 +1,23 @@
-import { emptyStore, type Group, type Profile, type StorageMode, type Store } from "@/lib/types"
+import {
+  emptyStore,
+  normalizeStore,
+  type Group,
+  type Profile,
+  type SplitMode,
+  type StorageMode,
+  type Store,
+} from "@/lib/types"
 import {
   addExpense,
   addMember,
+  addPayment,
   claimMember,
   createGroup,
   createProfile,
-  deleteExpense,
   groupByCode,
   groupsForProfile,
+  voidExpense,
+  voidPayment,
 } from "@/lib/operations"
 
 const PROFILE_KEY = "waybill.profile"
@@ -27,10 +37,10 @@ function readLocalStore(): Store {
     const raw = window.localStorage.getItem(LOCAL_STORE_KEY)
     if (!raw) return emptyStore()
     const parsed = JSON.parse(raw) as Partial<Store>
-    return {
+    return normalizeStore({
       profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
-    }
+    })
   } catch {
     return emptyStore()
   }
@@ -183,15 +193,34 @@ async function patchGroup(id: string, body: Record<string, unknown>) {
                 reason: String(body.reason ?? ""),
                 paidByMemberId: String(body.paidByMemberId ?? ""),
                 participantIds: (body.participantIds as string[]) ?? [],
+                split: body.split as SplitMode | undefined,
+                shares: (body.shares as Record<string, number>) ?? {},
                 createdByProfileId: String(body.profileId ?? ""),
               })
-            : action === "delete-expense"
-              ? deleteExpense(store, {
+            : action === "void-expense" || action === "delete-expense"
+              ? voidExpense(store, {
                   groupId: id,
                   expenseId: String(body.expenseId ?? ""),
                   profileId: String(body.profileId ?? ""),
+                  restore: Boolean(body.restore),
                 })
-              : null
+              : action === "add-payment"
+                ? addPayment(store, {
+                    groupId: id,
+                    date: String(body.date ?? ""),
+                    amount: Number(body.amount),
+                    fromMemberId: String(body.fromMemberId ?? ""),
+                    toMemberId: String(body.toMemberId ?? ""),
+                    createdByProfileId: String(body.profileId ?? ""),
+                  })
+                : action === "void-payment"
+                  ? voidPayment(store, {
+                      groupId: id,
+                      paymentId: String(body.paymentId ?? ""),
+                      profileId: String(body.profileId ?? ""),
+                      restore: Boolean(body.restore),
+                    })
+                  : null
     if (!result) throw new Error("Unknown action.")
     writeLocalStore(result.store)
     return result.group
@@ -219,12 +248,41 @@ export function saveExpense(
     reason: string
     paidByMemberId: string
     participantIds: string[]
+    split: SplitMode
+    shares: Record<string, number>
     profileId: string
   }
 ) {
   return patchGroup(groupId, { action: "add-expense", ...input })
 }
 
-export function removeExpense(groupId: string, expenseId: string, profileId: string) {
-  return patchGroup(groupId, { action: "delete-expense", expenseId, profileId })
+export function crossExpense(
+  groupId: string,
+  expenseId: string,
+  profileId: string,
+  restore = false
+) {
+  return patchGroup(groupId, { action: "void-expense", expenseId, profileId, restore })
+}
+
+export function recordPayment(
+  groupId: string,
+  input: {
+    date: string
+    amount: number
+    fromMemberId: string
+    toMemberId: string
+    profileId: string
+  }
+) {
+  return patchGroup(groupId, { action: "add-payment", ...input })
+}
+
+export function crossPayment(
+  groupId: string,
+  paymentId: string,
+  profileId: string,
+  restore = false
+) {
+  return patchGroup(groupId, { action: "void-payment", paymentId, profileId, restore })
 }

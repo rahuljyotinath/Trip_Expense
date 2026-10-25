@@ -37,7 +37,8 @@ Without those vars the site still runs. Data stays in the browser on that device
 1. Type your name. That is your profile. The browser remembers it.
 2. **Open a trip**: name it, list everyone. You get a 6-letter code.
 3. **Join**: enter the code, claim the name that is you.
-4. Add a spend. Uncheck anyone who was not on that bill.
-5. Settle shows who pays whom.
+4. Add a spend. Uncheck anyone who was not on that bill. Split equal or by percent.
+5. Settle shows who pays whom. Mark a line **paid** when cash changes hands.
+6. Wrong spend? Cross the line out. It stays on the page and drops out of the math.
 
-Equal split only. Amounts are stored in the trip currency (INR by default).
+One currency per trip (INR by default). Roster names are nicknames — two Rahuls need two different labels.

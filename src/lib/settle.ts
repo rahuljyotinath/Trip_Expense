@@ -1,23 +1,34 @@
 import { fromPaise, toPaise } from "@/lib/money"
-import type { Group, Transfer } from "@/lib/types"
+import { allocatePercent } from "@/lib/shares"
+import { normalizeGroup, type Group, type Transfer } from "@/lib/types"
 
-export function netBalances(group: Group) {
+export function netBalances(raw: Group) {
+  const group = normalizeGroup(raw)
   const balances = new Map<string, number>()
   for (const member of group.members) {
     balances.set(member.id, 0)
   }
 
   for (const expense of group.expenses) {
+    if (expense.voidedAt) continue
     const people = expense.participantIds.filter((id) => balances.has(id))
     if (people.length === 0) continue
     const total = toPaise(expense.amount)
-    const share = Math.floor(total / people.length)
-    let remainder = total - share * people.length
 
     const payer = balances.get(expense.paidByMemberId)
     if (payer === undefined) continue
     balances.set(expense.paidByMemberId, payer + total)
 
+    if (expense.split === "percent") {
+      const cuts = allocatePercent(total, people, expense.shares)
+      for (const [id, cut] of cuts) {
+        balances.set(id, (balances.get(id) ?? 0) - cut)
+      }
+      continue
+    }
+
+    const share = Math.floor(total / people.length)
+    let remainder = total - share * people.length
     for (const id of people) {
       let cut = share
       if (remainder > 0) {
@@ -26,6 +37,22 @@ export function netBalances(group: Group) {
       }
       balances.set(id, (balances.get(id) ?? 0) - cut)
     }
+  }
+
+  for (const payment of group.payments) {
+    if (payment.voidedAt) continue
+    if (!balances.has(payment.fromMemberId) || !balances.has(payment.toMemberId)) {
+      continue
+    }
+    const amount = toPaise(payment.amount)
+    balances.set(
+      payment.fromMemberId,
+      (balances.get(payment.fromMemberId) ?? 0) + amount
+    )
+    balances.set(
+      payment.toMemberId,
+      (balances.get(payment.toMemberId) ?? 0) - amount
+    )
   }
 
   const result: Record<string, number> = {}

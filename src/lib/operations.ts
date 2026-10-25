@@ -1,5 +1,6 @@
 import { joinCode, nowIso, uid } from "@/lib/ids"
-import type { Expense, Group, Profile, Store } from "@/lib/types"
+import { sharesComplete } from "@/lib/shares"
+import type { Expense, Group, Payment, Profile, SplitMode, Store } from "@/lib/types"
 
 function cleanName(raw: string, max: number) {
   const name = raw.replace(/\s+/g, " ").trim()
@@ -87,6 +88,7 @@ export function createGroup(
         memberName.toLowerCase() === profile.name.toLowerCase() ? profile.id : null,
     })),
     expenses: [],
+    payments: [],
   }
 
   return {
@@ -100,7 +102,7 @@ export function addMember(store: Store, groupId: string, rawName: string) {
   const name = cleanName(rawName, 40)
   if (!name) throw new Error("Member needs a name.")
   if (group.members.some((member) => member.name.toLowerCase() === name.toLowerCase())) {
-    throw new Error("That name is already on this trip.")
+    throw new Error("That nickname is already on this trip.")
   }
   const next: Group = {
     ...group,
@@ -138,6 +140,22 @@ export function claimMember(
   return { store: replaceGroup(store, next), group: next }
 }
 
+function requireDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Date must be YYYY-MM-DD.")
+  }
+}
+
+function requireSeated(group: Group, profileId: string) {
+  if (!group.members.some((member) => member.profileId === profileId)) {
+    throw new Error("Claim your nickname on this trip first.")
+  }
+}
+
+function canVoid(group: Group, profileId: string, authorId: string) {
+  return authorId === profileId || group.createdByProfileId === profileId
+}
+
 export function addExpense(
   store: Store,
   input: {
@@ -147,18 +165,16 @@ export function addExpense(
     reason: string
     paidByMemberId: string
     participantIds: string[]
+    split?: SplitMode
+    shares?: Record<string, number>
     createdByProfileId: string
   }
 ) {
   const profile = store.profiles.find((item) => item.id === input.createdByProfileId)
   if (!profile) throw new Error("Set up your profile first.")
   const group = requireGroup(store, input.groupId)
-  if (!group.members.some((member) => member.profileId === profile.id)) {
-    throw new Error("Claim your name on this trip before adding spends.")
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
-    throw new Error("Date must be YYYY-MM-DD.")
-  }
+  requireSeated(group, profile.id)
+  requireDate(input.date)
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new Error("Amount must be more than zero.")
   }
@@ -173,6 +189,17 @@ export function addExpense(
     throw new Error("A selected person is not on this trip.")
   }
 
+  const split: SplitMode = input.split === "percent" ? "percent" : "equal"
+  let shares: Record<string, number> = {}
+  if (split === "percent") {
+    shares = Object.fromEntries(
+      participantIds.map((id) => [id, Math.round((Number(input.shares?.[id]) || 0) * 100) / 100])
+    )
+    if (!sharesComplete(participantIds, shares)) {
+      throw new Error("Percents must be over zero and add to 100.")
+    }
+  }
+
   const expense: Expense = {
     id: uid("e"),
     date: input.date,
@@ -180,29 +207,107 @@ export function addExpense(
     reason,
     paidByMemberId: input.paidByMemberId,
     participantIds,
+    split,
+    shares,
     createdByProfileId: profile.id,
     createdAt: nowIso(),
+    voidedAt: null,
+    voidedByProfileId: null,
   }
   const next: Group = { ...group, expenses: [expense, ...group.expenses] }
   return { store: replaceGroup(store, next), group: next }
 }
 
-export function deleteExpense(
+export function voidExpense(
   store: Store,
-  input: { groupId: string; expenseId: string; profileId: string }
+  input: { groupId: string; expenseId: string; profileId: string; restore?: boolean }
 ) {
   const group = requireGroup(store, input.groupId)
   const expense = group.expenses.find((item) => item.id === input.expenseId)
   if (!expense) throw new Error("Expense not found.")
-  if (
-    expense.createdByProfileId !== input.profileId &&
-    group.createdByProfileId !== input.profileId
-  ) {
-    throw new Error("Only the author or trip opener can remove this.")
+  if (!canVoid(group, input.profileId, expense.createdByProfileId)) {
+    throw new Error("Only the author or trip opener can cross this out.")
   }
   const next: Group = {
     ...group,
-    expenses: group.expenses.filter((item) => item.id !== expense.id),
+    expenses: group.expenses.map((item) =>
+      item.id === expense.id
+        ? {
+            ...item,
+            voidedAt: input.restore ? null : nowIso(),
+            voidedByProfileId: input.restore ? null : input.profileId,
+          }
+        : item
+    ),
+  }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+export function addPayment(
+  store: Store,
+  input: {
+    groupId: string
+    date: string
+    amount: number
+    fromMemberId: string
+    toMemberId: string
+    createdByProfileId: string
+  }
+) {
+  const profile = store.profiles.find((item) => item.id === input.createdByProfileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const group = requireGroup(store, input.groupId)
+  requireSeated(group, profile.id)
+  requireDate(input.date)
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    throw new Error("Amount must be more than zero.")
+  }
+  if (input.fromMemberId === input.toMemberId) {
+    throw new Error("Paid-back needs two different people.")
+  }
+  if (!group.members.some((member) => member.id === input.fromMemberId)) {
+    throw new Error("Payer is not on this trip.")
+  }
+  if (!group.members.some((member) => member.id === input.toMemberId)) {
+    throw new Error("Receiver is not on this trip.")
+  }
+
+  const payment: Payment = {
+    id: uid("pay"),
+    date: input.date,
+    amount: Math.round(input.amount * 100) / 100,
+    fromMemberId: input.fromMemberId,
+    toMemberId: input.toMemberId,
+    createdByProfileId: profile.id,
+    createdAt: nowIso(),
+    voidedAt: null,
+    voidedByProfileId: null,
+  }
+  const next: Group = { ...group, payments: [payment, ...(group.payments ?? [])] }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+export function voidPayment(
+  store: Store,
+  input: { groupId: string; paymentId: string; profileId: string; restore?: boolean }
+) {
+  const group = requireGroup(store, input.groupId)
+  const payment = (group.payments ?? []).find((item) => item.id === input.paymentId)
+  if (!payment) throw new Error("Payment not found.")
+  if (!canVoid(group, input.profileId, payment.createdByProfileId)) {
+    throw new Error("Only the author or trip opener can cross this out.")
+  }
+  const next: Group = {
+    ...group,
+    payments: (group.payments ?? []).map((item) =>
+      item.id === payment.id
+        ? {
+            ...item,
+            voidedAt: input.restore ? null : nowIso(),
+            voidedByProfileId: input.restore ? null : input.profileId,
+          }
+        : item
+    ),
   }
   return { store: replaceGroup(store, next), group: next }
 }

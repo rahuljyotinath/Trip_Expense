@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { Octokit } from "octokit"
-import { emptyStore, type StorageMode, type Store } from "@/lib/types"
+import { emptyStore, normalizeStore, type StorageMode, type Store } from "@/lib/types"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
 const DEFAULT_REMOTE_PATH = "data/store.json"
@@ -45,10 +45,10 @@ export function storageMode(): StorageMode {
 function asStore(value: unknown): Store {
   if (!value || typeof value !== "object") return emptyStore()
   const record = value as Partial<Store>
-  return {
+  return normalizeStore({
     profiles: Array.isArray(record.profiles) ? record.profiles : [],
     groups: Array.isArray(record.groups) ? record.groups : [],
-  }
+  })
 }
 
 async function readLocal(): Promise<Loaded> {

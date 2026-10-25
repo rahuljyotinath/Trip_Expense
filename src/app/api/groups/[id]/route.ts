@@ -1,6 +1,14 @@
 import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
-import { addExpense, addMember, claimMember, deleteExpense } from "@/lib/operations"
+import {
+  addExpense,
+  addMember,
+  addPayment,
+  claimMember,
+  voidExpense,
+  voidPayment,
+} from "@/lib/operations"
+import type { SplitMode } from "@/lib/types"
 
 export async function GET(
   _request: Request,
@@ -39,7 +47,13 @@ export async function PATCH(
       reason?: string
       paidByMemberId?: string
       participantIds?: string[]
+      split?: SplitMode
+      shares?: Record<string, number>
       expenseId?: string
+      paymentId?: string
+      fromMemberId?: string
+      toMemberId?: string
+      restore?: boolean
     }>(request)
 
     const result = await updateStore((store) => {
@@ -61,14 +75,35 @@ export async function PATCH(
           reason: body.reason ?? "",
           paidByMemberId: body.paidByMemberId ?? "",
           participantIds: body.participantIds ?? [],
+          split: body.split,
+          shares: body.shares,
           createdByProfileId: body.profileId ?? "",
         })
       }
-      if (body.action === "delete-expense") {
-        return deleteExpense(store, {
+      if (body.action === "void-expense" || body.action === "delete-expense") {
+        return voidExpense(store, {
           groupId: id,
           expenseId: body.expenseId ?? "",
           profileId: body.profileId ?? "",
+          restore: body.restore,
+        })
+      }
+      if (body.action === "add-payment") {
+        return addPayment(store, {
+          groupId: id,
+          date: body.date ?? "",
+          amount: Number(body.amount),
+          fromMemberId: body.fromMemberId ?? "",
+          toMemberId: body.toMemberId ?? "",
+          createdByProfileId: body.profileId ?? "",
+        })
+      }
+      if (body.action === "void-payment") {
+        return voidPayment(store, {
+          groupId: id,
+          paymentId: body.paymentId ?? "",
+          profileId: body.profileId ?? "",
+          restore: body.restore,
         })
       }
       throw new Error("Unknown action.")

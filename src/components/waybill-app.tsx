@@ -5,12 +5,12 @@ import { useSearchParams } from "next/navigation"
 import {
   AlertCircle,
   ArrowRight,
+  Banknote,
   Check,
   Copy,
   Link2,
   Plus,
   Receipt,
-  Trash2,
   Users,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -48,8 +48,10 @@ import {
   inviteName,
   loadHealth,
   loadSavedProfile,
+  crossExpense,
+  crossPayment,
   openTrip,
-  removeExpense,
+  recordPayment,
   saveExpense,
   type Health,
 } from "@/lib/client-api"
@@ -57,7 +59,8 @@ import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
 import { netBalances, simplifyDebts } from "@/lib/settle"
-import type { Group, Profile } from "@/lib/types"
+import { evenPercents, shareTotal, sharesComplete } from "@/lib/shares"
+import type { Group, Profile, SplitMode } from "@/lib/types"
 
 type Screen = "boot" | "name" | "home" | "create" | "join" | "trip"
 
@@ -105,6 +108,7 @@ export function WaybillApp() {
 
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
+  const [paymentOpen, setPaymentOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
   async function refreshGroups(nextProfile: Profile) {
@@ -347,8 +351,10 @@ export function WaybillApp() {
           copied={copied}
           expenseOpen={expenseOpen}
           memberOpen={memberOpen}
+          paymentOpen={paymentOpen}
           onExpenseOpen={setExpenseOpen}
           onMemberOpen={setMemberOpen}
+          onPaymentOpen={setPaymentOpen}
           onCopy={copyCode}
           onRefresh={async () => {
             const next = await fetchGroup(group.id)
@@ -567,7 +573,8 @@ function CreateTrip({
         <CardTitle className="font-heading text-3xl">Name the trip.</CardTitle>
         <CardDescription>
           Be specific. “Goa Diwali 2026” settles. “Goa” fights with the next
-          Goa. Then list every person — they claim those seats later.
+          Goa. Nicknames on the roster — two Rahuls? Call one Rahul K. They
+          claim those seats later.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -595,12 +602,12 @@ function CreateTrip({
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="person">Who is coming?</Label>
+          <Label htmlFor="person">Nicknames on the trip</Label>
           <div className="flex gap-2">
             <Input
               id="person"
               value={personDraft}
-              placeholder="Add a name, press enter"
+              placeholder="Add a nickname, press enter"
               onChange={(event) => onDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -745,8 +752,10 @@ function TripDesk({
   copied,
   expenseOpen,
   memberOpen,
+  paymentOpen,
   onExpenseOpen,
   onMemberOpen,
+  onPaymentOpen,
   onCopy,
   onRefresh,
   onGroup,
@@ -759,8 +768,10 @@ function TripDesk({
   copied: boolean
   expenseOpen: boolean
   memberOpen: boolean
+  paymentOpen: boolean
   onExpenseOpen: (open: boolean) => void
   onMemberOpen: (open: boolean) => void
+  onPaymentOpen: (open: boolean) => void
   onCopy: (value: string) => void
   onRefresh: () => Promise<void>
   onGroup: (group: Group) => void
@@ -795,6 +806,13 @@ function TripDesk({
           <Button variant="outline" onClick={() => onCopy(shareUrl)}>
             <Link2 /> Share
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => onPaymentOpen(true)}
+            disabled={!seat}
+          >
+            <Banknote /> Paid back
+          </Button>
           <Button onClick={() => onExpenseOpen(true)} disabled={!seat}>
             <Receipt /> Add spend
           </Button>
@@ -813,8 +831,8 @@ function TripDesk({
               <CardHeader>
                 <CardTitle>Books are even</CardTitle>
                 <CardDescription>
-                  {group.expenses.length === 0
-                    ? "No spends yet. First dinner goes here."
+                  {group.expenses.every((item) => item.voidedAt)
+                    ? "No live spends. First dinner, or uncross a line."
                     : "Everyone is square on the current ledger."}
                 </CardDescription>
               </CardHeader>
@@ -822,7 +840,7 @@ function TripDesk({
           ) : (
             transfers.map((transfer) => (
               <Card key={`${transfer.fromMemberId}-${transfer.toMemberId}`}>
-                <CardContent className="flex items-center justify-between gap-3 pt-1">
+                <CardContent className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
                   <p>
                     <span className="font-medium">
                       {memberName(group, transfer.fromMemberId)}
@@ -832,13 +850,95 @@ function TripDesk({
                       {memberName(group, transfer.toMemberId)}
                     </span>
                   </p>
-                  <p className="font-heading text-2xl">
-                    {formatMoney(transfer.amount, group.currency)}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <p className="font-heading text-2xl">
+                      {formatMoney(transfer.amount, group.currency)}
+                    </p>
+                    {seat ? (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          onBusy(true)
+                          onError(null)
+                          try {
+                            onGroup(
+                              await recordPayment(group.id, {
+                                date: todayIsoDate(),
+                                amount: transfer.amount,
+                                fromMemberId: transfer.fromMemberId,
+                                toMemberId: transfer.toMemberId,
+                                profileId: profile.id,
+                              })
+                            )
+                          } catch (err) {
+                            onError(errorText(err))
+                          } finally {
+                            onBusy(false)
+                          }
+                        }}
+                      >
+                        Mark paid
+                      </Button>
+                    ) : null}
+                  </div>
                 </CardContent>
               </Card>
             ))
           )}
+          {(group.payments ?? []).length > 0 ? (
+            <div className="space-y-2">
+              <p className="font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
+                Paid back
+              </p>
+              {(group.payments ?? []).map((payment) => {
+                const crossed = Boolean(payment.voidedAt)
+                const canEdit =
+                  payment.createdByProfileId === profile.id ||
+                  group.createdByProfileId === profile.id
+                return (
+                  <div
+                    key={payment.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                  >
+                    <p className={crossed ? "text-muted-foreground line-through" : ""}>
+                      {formatDay(payment.date)} ·{" "}
+                      {memberName(group, payment.fromMemberId)} →{" "}
+                      {memberName(group, payment.toMemberId)} ·{" "}
+                      {formatMoney(payment.amount, group.currency)}
+                    </p>
+                    {canEdit ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          onBusy(true)
+                          onError(null)
+                          try {
+                            onGroup(
+                              await crossPayment(
+                                group.id,
+                                payment.id,
+                                profile.id,
+                                crossed
+                              )
+                            )
+                          } catch (err) {
+                            onError(errorText(err))
+                          } finally {
+                            onBusy(false)
+                          }
+                        }}
+                      >
+                        {crossed ? "Count again" : "Cross out"}
+                      </Button>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-2">
             {group.members.map((member) => {
               const value = balances[member.id] ?? 0
@@ -872,38 +972,57 @@ function TripDesk({
               </CardHeader>
             </Card>
           ) : (
-            group.expenses.map((expense) => (
-              <Card key={expense.id}>
+            group.expenses.map((expense) => {
+              const crossed = Boolean(expense.voidedAt)
+              const canEdit =
+                expense.createdByProfileId === profile.id ||
+                group.createdByProfileId === profile.id
+              return (
+              <Card key={expense.id} className={crossed ? "opacity-70" : ""}>
                 <CardHeader className="flex-row items-start justify-between gap-3">
                   <div>
-                    <CardTitle>{expense.reason}</CardTitle>
-                    <CardDescription>
+                    <CardTitle className={crossed ? "line-through" : ""}>
+                      {expense.reason}
+                    </CardTitle>
+                    <CardDescription className={crossed ? "line-through" : ""}>
                       {formatDay(expense.date)} · paid by{" "}
                       {memberName(group, expense.paidByMemberId)}
+                      {expense.split === "percent" ? " · percent" : " · equal"}
                     </CardDescription>
                   </div>
-                  <p className="font-heading text-2xl">
+                  <p className={`font-heading text-2xl ${crossed ? "line-through" : ""}`}>
                     {formatMoney(expense.amount, group.currency)}
                   </p>
                 </CardHeader>
                 <CardContent className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    {expense.participantIds
-                      .map((id) => memberName(group, id))
-                      .join(", ")}
+                  <p className={`text-sm text-muted-foreground ${crossed ? "line-through" : ""}`}>
+                    {expense.split === "percent"
+                      ? expense.participantIds
+                          .map(
+                            (id) =>
+                              `${expense.shares[id] ?? 0}% ${memberName(group, id)}`
+                          )
+                          .join(" · ")
+                      : expense.participantIds
+                          .map((id) => memberName(group, id))
+                          .join(", ")}
                   </p>
-                  {expense.createdByProfileId === profile.id ||
-                  group.createdByProfileId === profile.id ? (
+                  {canEdit ? (
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="sm"
                       disabled={busy}
                       onClick={async () => {
                         onBusy(true)
                         onError(null)
                         try {
                           onGroup(
-                            await removeExpense(group.id, expense.id, profile.id)
+                            await crossExpense(
+                              group.id,
+                              expense.id,
+                              profile.id,
+                              crossed
+                            )
                           )
                         } catch (err) {
                           onError(errorText(err))
@@ -912,12 +1031,13 @@ function TripDesk({
                         }
                       }}
                     >
-                      <Trash2 />
+                      {crossed ? "Count again" : "Cross out"}
                     </Button>
                   ) : null}
                 </CardContent>
               </Card>
-            ))
+              )
+            })
           )}
         </TabsContent>
         <TabsContent value="people" className="space-y-3 pt-4">
@@ -930,15 +1050,15 @@ function TripDesk({
                 <p className="font-medium">{member.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {member.profileId
-                    ? "Matched to a profile"
-                    : "Open seat — they still need to claim"}
+                    ? "Nickname matched to a profile"
+                    : "Open nickname — they still need to claim"}
                 </p>
               </div>
               <Users className="size-4 text-muted-foreground" />
             </div>
           ))}
           <Button variant="outline" onClick={() => onMemberOpen(true)}>
-            <Plus /> Add a name
+            <Plus /> Add a nickname
           </Button>
         </TabsContent>
       </Tabs>
@@ -965,6 +1085,19 @@ function TripDesk({
         onSaved={(next) => {
           onGroup(next)
           onMemberOpen(false)
+        }}
+        onError={onError}
+        onBusy={onBusy}
+      />
+      <PaymentDialog
+        open={paymentOpen}
+        group={group}
+        profile={profile}
+        busy={busy}
+        onOpen={onPaymentOpen}
+        onSaved={(next) => {
+          onGroup(next)
+          onPaymentOpen(false)
         }}
         onError={onError}
         onBusy={onBusy}
@@ -1031,11 +1164,21 @@ function ExpenseForm({
   const [participants, setParticipants] = useState<string[]>(
     group.members.map((member) => member.id)
   )
+  const [split, setSplit] = useState<SplitMode>("equal")
+  const [shares, setShares] = useState<Record<string, number>>(
+    evenPercents(group.members.map((member) => member.id))
+  )
+
+  function setPeople(next: string[]) {
+    setParticipants(next)
+    setShares(evenPercents(next))
+  }
 
   function toggle(id: string, checked: boolean) {
-    setParticipants((current) =>
-      checked ? [...new Set([...current, id])] : current.filter((item) => item !== id)
-    )
+    const next = checked
+      ? [...new Set([...participants, id])]
+      : participants.filter((item) => item !== id)
+    setPeople(next)
   }
 
   return (
@@ -1043,7 +1186,8 @@ function ExpenseForm({
         <DialogHeader>
           <DialogTitle>Log a spend</DialogTitle>
           <DialogDescription>
-            Uncheck anyone who was not on this bill. One person is allowed.
+            Uncheck anyone who was not on this bill. Equal split or percents
+            that add to 100.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -1098,7 +1242,7 @@ function ExpenseForm({
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  setParticipants(
+                  setPeople(
                     participants.length === group.members.length
                       ? [paidBy]
                       : group.members.map((member) => member.id)
@@ -1108,6 +1252,26 @@ function ExpenseForm({
                 {participants.length === group.members.length ? "Only payer" : "Everyone"}
               </Button>
             </div>
+            <div className="flex gap-2">
+              <Button
+                variant={split === "equal" ? "default" : "outline"}
+                onClick={() => {
+                  setSplit("equal")
+                  setShares(evenPercents(participants))
+                }}
+              >
+                Equal
+              </Button>
+              <Button
+                variant={split === "percent" ? "default" : "outline"}
+                onClick={() => {
+                  setSplit("percent")
+                  setShares(evenPercents(participants))
+                }}
+              >
+                Percent
+              </Button>
+            </div>
             <div className="space-y-2">
               {group.members.map((member) => (
                 <label key={member.id} className="flex items-center gap-2 text-sm">
@@ -1115,10 +1279,35 @@ function ExpenseForm({
                     checked={participants.includes(member.id)}
                     onCheckedChange={(value) => toggle(member.id, value === true)}
                   />
-                  {member.name}
+                  <span className="flex-1">{member.name}</span>
+                  {split === "percent" && participants.includes(member.id) ? (
+                    <Input
+                      className="h-7 w-20"
+                      inputMode="decimal"
+                      value={shares[member.id] ?? ""}
+                      onChange={(event) =>
+                        setShares((current) => ({
+                          ...current,
+                          [member.id]: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  ) : null}
                 </label>
               ))}
             </div>
+            {split === "percent" ? (
+              <p
+                className={`text-xs ${
+                  sharesComplete(participants, shares)
+                    ? "text-moss"
+                    : "text-stamp"
+                }`}
+              >
+                {shareTotal(participants, shares) / 100}% total
+                {sharesComplete(participants, shares) ? "" : " — must be 100"}
+              </p>
+            ) : null}
           </div>
         </div>
         <DialogFooter>
@@ -1133,12 +1322,18 @@ function ExpenseForm({
               onBusy(true)
               onError(null)
               try {
+                if (split === "percent" && !sharesComplete(participants, shares)) {
+                  onError("Percents must add to 100.")
+                  return
+                }
                 const next = await saveExpense(group.id, {
                   date,
                   amount: parsed,
                   reason,
                   paidByMemberId: paidBy,
                   participantIds: participants,
+                  split,
+                  shares: split === "percent" ? shares : {},
                   profileId: profile.id,
                 })
                 await onSaved(next)
@@ -1206,15 +1401,15 @@ function MemberForm({
   return (
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add a name</DialogTitle>
+          <DialogTitle>Add a nickname</DialogTitle>
           <DialogDescription>
-            Empty seat. They match it when they make their profile and enter the
-            code.
+            Empty seat. Two Rahuls? Call one Rahul K. They match it when they
+            make their profile and enter the code.
           </DialogDescription>
         </DialogHeader>
         <Input
           value={name}
-          placeholder="New person"
+          placeholder="Nickname"
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") event.preventDefault()
@@ -1239,5 +1434,159 @@ function MemberForm({
           </Button>
         </DialogFooter>
       </DialogContent>
+  )
+}
+
+function PaymentDialog({
+  open,
+  group,
+  profile,
+  busy,
+  onOpen,
+  onSaved,
+  onError,
+  onBusy,
+}: {
+  open: boolean
+  group: Group
+  profile: Profile
+  busy: boolean
+  onOpen: (open: boolean) => void
+  onSaved: (group: Group) => void
+  onError: (message: string | null) => void
+  onBusy: (value: boolean) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpen}>
+      {open ? (
+        <PaymentForm
+          group={group}
+          profile={profile}
+          busy={busy}
+          onSaved={onSaved}
+          onError={onError}
+          onBusy={onBusy}
+        />
+      ) : null}
+    </Dialog>
+  )
+}
+
+function PaymentForm({
+  group,
+  profile,
+  busy,
+  onSaved,
+  onError,
+  onBusy,
+}: {
+  group: Group
+  profile: Profile
+  busy: boolean
+  onSaved: (group: Group) => void
+  onError: (message: string | null) => void
+  onBusy: (value: boolean) => void
+}) {
+  const seat = mySeat(group, profile.id)
+  const [date, setDate] = useState(todayIsoDate())
+  const [amount, setAmount] = useState("")
+  const [fromId, setFromId] = useState(seat?.id ?? group.members[0]?.id ?? "")
+  const [toId, setToId] = useState(
+    group.members.find((member) => member.id !== (seat?.id ?? group.members[0]?.id))
+      ?.id ?? ""
+  )
+
+  return (
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Record paid back</DialogTitle>
+        <DialogDescription>
+          Someone handed cash. This cuts the open tab. Cross it out later if
+          that was a mistake.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="pay-date">Date</Label>
+            <Input
+              id="pay-date"
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pay-amount">Amount</Label>
+            <Input
+              id="pay-amount"
+              inputMode="decimal"
+              placeholder="800"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Who paid</Label>
+          <div className="flex flex-wrap gap-2">
+            {group.members.map((member) => (
+              <Button
+                key={member.id}
+                variant={fromId === member.id ? "default" : "outline"}
+                onClick={() => setFromId(member.id)}
+              >
+                {member.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Who received</Label>
+          <div className="flex flex-wrap gap-2">
+            {group.members.map((member) => (
+              <Button
+                key={member.id}
+                variant={toId === member.id ? "default" : "outline"}
+                onClick={() => setToId(member.id)}
+              >
+                {member.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button
+          disabled={busy}
+          onClick={async () => {
+            const parsed = parseAmount(amount)
+            if (!parsed) {
+              onError("Amount has to be a real number.")
+              return
+            }
+            onBusy(true)
+            onError(null)
+            try {
+              onSaved(
+                await recordPayment(group.id, {
+                  date,
+                  amount: parsed,
+                  fromMemberId: fromId,
+                  toMemberId: toId,
+                  profileId: profile.id,
+                })
+              )
+            } catch (err) {
+              onError(errorText(err))
+            } finally {
+              onBusy(false)
+            }
+          }}
+        >
+          Save payment
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   )
 }
