@@ -182,14 +182,28 @@ export function WaybillApp() {
     setPersonDraft("")
   }
 
+  function rosterNames() {
+    const extra = personDraft.replace(/\s+/g, " ").trim()
+    if (!extra) return people
+    if (people.some((item) => item.toLowerCase() === extra.toLowerCase())) {
+      return people
+    }
+    return [...people, extra]
+  }
+
   async function onCreateTrip() {
     if (!profile) return
+    const memberNames = rosterNames()
+    if (memberNames.length < 2) {
+      setError("Add at least one other nickname, then write the roster.")
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       const next = await openTrip({
         name: tripName,
-        memberNames: people,
+        memberNames,
         createdByProfileId: profile.id,
         currency,
       })
@@ -198,6 +212,7 @@ export function WaybillApp() {
       setScreen("trip")
       setTripName("")
       setPeople([])
+      setPersonDraft("")
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -567,6 +582,8 @@ function CreateTrip({
   onBack: () => void
   onSubmit: () => void
 }) {
+  const canWrite = Boolean(tripName.trim()) && (people.length >= 2 || personDraft.trim().length > 0)
+
   return (
     <Card className="max-w-xl">
       <CardHeader>
@@ -578,6 +595,13 @@ function CreateTrip({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <form
+          className="space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (canWrite && !busy) onSubmit()
+          }}
+        >
         <div className="space-y-2">
           <Label htmlFor="trip-name">Trip</Label>
           <Input
@@ -593,6 +617,7 @@ function CreateTrip({
             {["INR", "USD", "EUR", "GBP"].map((item) => (
               <Button
                 key={item}
+                type="button"
                 variant={currency === item ? "default" : "outline"}
                 onClick={() => onCurrency(item)}
               >
@@ -616,7 +641,7 @@ function CreateTrip({
                 }
               }}
             />
-            <Button variant="outline" onClick={onAddPerson}>
+            <Button type="button" variant="outline" onClick={onAddPerson}>
               <Plus />
             </Button>
           </div>
@@ -640,17 +665,26 @@ function CreateTrip({
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            You are already on the list. Need at least one other name.
+            You are already on the list. Type another nickname and write — Enter
+            is enough, no extra click.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onBack}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="ghost" onClick={onBack}>
             Back
           </Button>
-          <Button disabled={busy || !tripName.trim() || people.length < 2} onClick={onSubmit}>
+          <Button type="submit" disabled={busy || !canWrite}>
             Write the roster
           </Button>
+          {!canWrite ? (
+            <span className="text-xs text-stamp">
+              {!tripName.trim()
+                ? "Name the trip first."
+                : "Need one more nickname."}
+            </span>
+          ) : null}
         </div>
+        </form>
       </CardContent>
     </Card>
   )
