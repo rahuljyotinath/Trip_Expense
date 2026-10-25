@@ -417,14 +417,27 @@ function Shell({
             <p className="text-muted-foreground">No seat yet</p>
           )}
           <p className="font-mono text-[11px] text-muted-foreground uppercase">
-            {health?.mode === "github"
-              ? `GitHub · ${health.repo}`
+            {health?.connected
+              ? "GitHub connected"
               : health?.mode === "local"
                 ? "Local file"
                 : health?.mode === "unconfigured"
                   ? "This browser"
-                  : "…"}
+                  : health?.mode === "github"
+                    ? "GitHub"
+                    : "…"}
           </p>
+          {health?.repo ? (
+            <a
+              href={health.githubUrl ?? `https://github.com/${health.repo}`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 inline-flex items-center justify-end gap-1 font-mono text-[11px] text-muted-foreground uppercase hover:text-foreground"
+            >
+              <Link2 className="size-3" />
+              {health.repo}
+            </a>
+          ) : null}
         </div>
       </header>
       {health?.warning ? (

@@ -1,14 +1,31 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { Octokit } from "octokit"
-import { emptyStore, normalizeStore, type StorageMode, type Store } from "@/lib/types"
+import { emptyStore, normalizeStore, type StorageMode, type Store } from "./types"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
 const DEFAULT_REMOTE_PATH = "data/store.json"
+export const DEFAULT_GITHUB_REPO = "rahuljyotinath/Trip_Expense"
 
 type Loaded = {
   store: Store
   sha?: string
+}
+
+export type GithubTarget = {
+  owner: string
+  repo: string
+  fullName: string
+  branch: string
+  filePath: string
+  hasToken: boolean
+}
+
+export type GithubProbe = GithubTarget & {
+  connected: boolean
+  githubUrl: string
+  sha?: string
+  error: string | null
 }
 
 let queue: Promise<unknown> = Promise.resolve()
@@ -22,24 +39,93 @@ function enqueue<T>(job: () => Promise<T>) {
   return run
 }
 
-function githubConfig() {
-  const token = process.env.GITHUB_TOKEN
-  const repo = process.env.GITHUB_REPO
-  if (!token || !repo || !repo.includes("/")) return null
-  const [owner, name] = repo.split("/")
+export function resolveGithubTarget(): GithubTarget {
+  const raw = (process.env.GITHUB_REPO || DEFAULT_GITHUB_REPO).trim()
+  const [owner = "", name = ""] = raw.split("/")
+  const fullName = owner && name ? `${owner}/${name}` : DEFAULT_GITHUB_REPO
+  const [safeOwner, safeName] = fullName.split("/")
   return {
-    token,
-    owner,
-    repo: name,
-    branch: process.env.GITHUB_BRANCH || "main",
-    filePath: process.env.GITHUB_DB_PATH || DEFAULT_REMOTE_PATH,
+    owner: safeOwner,
+    repo: safeName,
+    fullName,
+    branch: process.env.GITHUB_BRANCH?.trim() || "main",
+    filePath: process.env.GITHUB_DB_PATH?.trim() || DEFAULT_REMOTE_PATH,
+    hasToken: Boolean(process.env.GITHUB_TOKEN?.trim()),
   }
+}
+
+function githubConfig() {
+  const token = process.env.GITHUB_TOKEN?.trim()
+  if (!token) return null
+  const target = resolveGithubTarget()
+  if (!target.owner || !target.repo) return null
+  return { token, ...target }
+}
+
+function githubUrl(target: GithubTarget) {
+  return `https://github.com/${target.fullName}`
+}
+
+function githubErrorMessage(error: unknown) {
+  const status = (error as { status?: number }).status
+  const message = error instanceof Error ? error.message : "GitHub request failed."
+  if (status === 401) return "GitHub token was rejected."
+  if (status === 403) return "GitHub token cannot write this repo. Needs Contents: Read and write."
+  if (status === 404) return "GitHub repo not found, or the token cannot see it."
+  if (status === 409) return "GitHub repo is empty. First Contents write should create data/store.json."
+  return message
 }
 
 export function storageMode(): StorageMode {
   if (githubConfig()) return "github"
   if (process.env.VERCEL) return "unconfigured"
   return "local"
+}
+
+export async function probeGithub(): Promise<GithubProbe> {
+  const target = resolveGithubTarget()
+  const base: GithubProbe = {
+    ...target,
+    connected: false,
+    githubUrl: githubUrl(target),
+    error: null,
+  }
+  const config = githubConfig()
+  if (!config) {
+    return {
+      ...base,
+      error: `Set GITHUB_TOKEN with Contents: Read and write on ${target.fullName}.`,
+    }
+  }
+
+  const octokit = new Octokit({ auth: config.token })
+  try {
+    await octokit.rest.repos.get({ owner: config.owner, repo: config.repo })
+  } catch (error) {
+    return { ...base, error: githubErrorMessage(error) }
+  }
+
+  try {
+    const loaded = await readGithub()
+    if (loaded.sha) {
+      return { ...base, connected: true, sha: loaded.sha, error: null }
+    }
+    await writeGithub(loaded.store)
+    const created = await readGithub()
+    return { ...base, connected: true, sha: created.sha, error: null }
+  } catch (error) {
+    const status = (error as { status?: number }).status
+    if (status === 404 || status === 409) {
+      try {
+        await writeGithub(emptyStore())
+        const created = await readGithub()
+        return { ...base, connected: true, sha: created.sha, error: null }
+      } catch (writeError) {
+        return { ...base, error: githubErrorMessage(writeError) }
+      }
+    }
+    return { ...base, error: githubErrorMessage(error) }
+  }
 }
 
 function asStore(value: unknown): Store {
@@ -100,10 +186,10 @@ async function writeGithub(store: Store, sha?: string) {
     owner: config.owner,
     repo: config.repo,
     path: config.filePath,
-    message: "waybill: update trip ledger",
+    message: sha ? "waybill: update trip ledger" : "waybill: create trip ledger",
     content: Buffer.from(`${JSON.stringify(store, null, 2)}\n`).toString("base64"),
     branch: config.branch,
-    sha,
+    ...(sha ? { sha } : {}),
   })
 }
 
@@ -146,9 +232,14 @@ export async function updateStore<T>(mutator: (store: Store) => T) {
   })
 }
 
-export function storageErrorMessage() {
+export function storageErrorMessage(probe?: GithubProbe) {
+  if (probe && !probe.connected) {
+    if (storageMode() === "unconfigured" || storageMode() === "github") {
+      return probe.error
+    }
+  }
   if (storageMode() === "unconfigured") {
-    return "This Vercel deploy has no GitHub file database. Add GITHUB_TOKEN and GITHUB_REPO, or use this browser only."
+    return `This Vercel deploy has no GitHub file database. Add GITHUB_TOKEN for ${resolveGithubTarget().fullName}, or use this browser only.`
   }
   return null
 }

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --port 43217 --hostname 127.0.0.1",
     "lint": "eslint",
-    "test": "tsx --test src/lib/settle.test.ts"
+    "test": "tsx --test src/lib/*.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

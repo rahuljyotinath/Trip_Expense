@@ -27,6 +27,11 @@ export type Health = {
   mode: StorageMode
   warning: string | null
   repo: string | null
+  connected: boolean
+  githubUrl: string | null
+  branch?: string | null
+  filePath?: string | null
+  error?: string | null
 }
 
 let mode: StorageMode = "local"
@@ -94,7 +99,10 @@ export async function loadHealth(): Promise<Health> {
     return {
       mode: "unconfigured",
       warning: "Using this browser only until GitHub file storage is configured.",
-      repo: null,
+      repo: "rahuljyotinath/Trip_Expense",
+      connected: false,
+      githubUrl: "https://github.com/rahuljyotinath/Trip_Expense",
+      error: "Health check failed.",
     }
   }
 }

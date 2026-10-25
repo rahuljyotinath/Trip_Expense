@@ -2,7 +2,7 @@
 
 Group trip expenses. One person opens a trip and names the people. Everyone else makes a profile, enters the join code, and claims their name. Spends store date, amount, reason, payer, and who was on the bill — one person or everyone.
 
-The database is a JSON file: `data/store.json`. Locally it is a file on disk. On Vercel it is the same file, read and written through the GitHub Contents API. No other database.
+The database is a JSON file: `data/store.json`. Locally it is a file on disk. On Vercel it is the same file, read and written through the GitHub Contents API on [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expense). No other database.
 
 ## Run
 
@@ -18,11 +18,23 @@ npm test
 npm run build
 ```
 
+## GitHub
+
+Ledger file: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expense) → `data/store.json`.
+
+This Cursor repo lives on Origin. Push a copy so GitHub has the app and the ledger file:
+
+```bash
+git remote add github https://github.com/rahuljyotinath/Trip_Expense.git
+git push -u github main
+```
+
+Create a fine-grained PAT with **Contents: Read and write** on `rahuljyotinath/Trip_Expense`. Locally copy `.env.example` to `.env.local` and set `GITHUB_TOKEN`.
+
 ## Vercel
 
 1. Publish the project.
-2. Create a GitHub personal access token with **Contents: Read and write** on this repo.
-3. In Vercel → Environment Variables:
+2. In Vercel → Environment Variables:
 
 | Name | Example |
 | --- | --- |
@@ -30,7 +42,7 @@ npm run build
 | `GITHUB_REPO` | `rahuljyotinath/Trip_Expense` |
 | `GITHUB_BRANCH` | `main` |
 
-Without those vars the site still runs. Data stays in the browser on that device.
+`GITHUB_REPO` defaults to `rahuljyotinath/Trip_Expense` if omitted. Without `GITHUB_TOKEN` the site still runs. Data stays in the browser on that device.
 
 ## How a trip works
 
