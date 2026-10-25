@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
+import { DEFAULT_GITHUB_BRANCH, DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 
 test("defaults GitHub ledger to rahuljyotinath/Trip_Expense", () => {
   const previous = {
@@ -18,7 +18,7 @@ test("defaults GitHub ledger to rahuljyotinath/Trip_Expense", () => {
     assert.equal(target.fullName, DEFAULT_GITHUB_REPO)
     assert.equal(target.owner, "rahuljyotinath")
     assert.equal(target.repo, "Trip_Expense")
-    assert.equal(target.branch, "main")
+    assert.equal(target.branch, DEFAULT_GITHUB_BRANCH)
     assert.equal(target.filePath, "data/store.json")
     assert.equal(target.hasToken, false)
   } finally {

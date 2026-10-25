@@ -1,4 +1,5 @@
 export const DEFAULT_GITHUB_REPO = "rahuljyotinath/Trip_Expense"
+export const DEFAULT_GITHUB_BRANCH = "ledger"
 export const DEFAULT_REMOTE_PATH = "data/store.json"
 
 export type GithubTarget = {
@@ -19,7 +20,7 @@ export function resolveGithubTarget(): GithubTarget {
     owner: safeOwner,
     repo: safeName,
     fullName,
-    branch: process.env.GITHUB_BRANCH?.trim() || "main",
+    branch: process.env.GITHUB_BRANCH?.trim() || DEFAULT_GITHUB_BRANCH,
     filePath: process.env.GITHUB_DB_PATH?.trim() || DEFAULT_REMOTE_PATH,
     hasToken: Boolean(process.env.GITHUB_TOKEN?.trim()),
   }
