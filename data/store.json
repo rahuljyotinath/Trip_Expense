@@ -6,5 +6,28 @@
       "createdAt": "2026-10-25T10:31:18.260Z"
     }
   ],
-  "groups": []
+  "groups": [
+    {
+      "id": "g_3caffdb812746042",
+      "name": "Env check",
+      "code": "QN2Q7N",
+      "currency": "INR",
+      "createdByProfileId": "p_7275f25cb3233c1f",
+      "createdAt": "2026-10-25T10:31:19.413Z",
+      "members": [
+        {
+          "id": "m_032e04e390ec21b5",
+          "name": "EnvSetup",
+          "profileId": "p_7275f25cb3233c1f"
+        },
+        {
+          "id": "m_53a7fca0105bace3",
+          "name": "Alice",
+          "profileId": null
+        }
+      ],
+      "expenses": [],
+      "payments": []
+    }
+  ]
 }
