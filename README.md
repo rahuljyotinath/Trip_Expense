@@ -27,7 +27,7 @@ npm run build
 | Name | Example |
 | --- | --- |
 | `GITHUB_TOKEN` | `github_pat_…` |
-| `GITHUB_REPO` | `you/waybill` |
+| `GITHUB_REPO` | `rahuljyotinath/Trip_Expense` |
 | `GITHUB_BRANCH` | `main` |
 
 Without those vars the site still runs. Data stays in the browser on that device.
