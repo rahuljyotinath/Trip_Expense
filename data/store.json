@@ -1,4 +1,10 @@
 {
-  "profiles": [],
+  "profiles": [
+    {
+      "id": "p_7275f25cb3233c1f",
+      "name": "EnvSetup",
+      "createdAt": "2026-10-25T10:31:18.260Z"
+    }
+  ],
   "groups": []
 }
