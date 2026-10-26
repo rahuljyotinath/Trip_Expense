@@ -32,7 +32,8 @@ export function TripPage() {
   const [health, setHealth] = useState<Health | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [group, setGroup] = useState<Group | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [deskError, setDeskError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
@@ -47,7 +48,8 @@ export function TripPage() {
 
     ;(async () => {
       setLoading(true)
-      setError(null)
+      setLoadError(null)
+      setDeskError(null)
       setGroup(null)
       try {
         const nextHealth = await loadHealth()
@@ -73,7 +75,7 @@ export function TripPage() {
         }
         setGroup(nextGroup)
       } catch (err) {
-        if (!cancelled) setError(errorText(err))
+        if (!cancelled) setLoadError(errorText(err))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -92,12 +94,12 @@ export function TripPage() {
   async function onClaim(memberId: string) {
     if (!profile || !group) return
     setBusy(true)
-    setError(null)
+    setDeskError(null)
     try {
       const next = await claimSeat(group.id, memberId, profile.id)
       setGroup(next)
     } catch (err) {
-      setError(errorText(err))
+      setDeskError(errorText(err))
     } finally {
       setBusy(false)
     }
@@ -117,13 +119,15 @@ export function TripPage() {
     )
   }
 
-  if (error || !group) {
+  if (loadError || !group) {
     return (
       <Shell health={health} profile={profile}>
         <Alert variant="destructive">
           <AlertCircle />
           <AlertTitle>Trip not found</AlertTitle>
-          <AlertDescription>{error ?? "This link may be wrong or expired."}</AlertDescription>
+          <AlertDescription>
+            {loadError ?? "This link may be wrong or expired."}
+          </AlertDescription>
         </Alert>
         <Link href="/" className="mt-4 inline-block text-sm underline underline-offset-4">
           Back to home
@@ -139,11 +143,11 @@ export function TripPage() {
       onHome={() => router.push("/")}
       onLogout={profile ? () => void onLogout() : undefined}
     >
-      {error ? (
+      {deskError ? (
         <Alert variant="destructive" className="mb-4">
           <AlertCircle />
           <AlertTitle>Hold on</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{deskError}</AlertDescription>
         </Alert>
       ) : null}
       <TripDesk
@@ -164,7 +168,7 @@ export function TripPage() {
           setGroup(next)
         }}
         onGroup={setGroup}
-        onError={setError}
+        onError={setDeskError}
         onBusy={setBusy}
         onClaim={profile ? onClaim : undefined}
       />

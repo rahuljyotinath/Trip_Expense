@@ -8,7 +8,8 @@
     "start": "next start --port 43217 --hostname 127.0.0.1",
     "lint": "eslint",
     "test": "tsx --test src/lib/*.test.ts",
-    "check": "npm test && npm run lint && npm run build"
+    "check": "npm test && npm run lint && npm run build",
+    "db:import": "tsx scripts/import-ledger-to-postgres.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -17,6 +18,7 @@
     "lucide-react": "^1.61.0",
     "next": "16.4.3",
     "octokit": "^5.0.5",
+    "postgres": "^3.4.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "shadcn": "^4.22.1",

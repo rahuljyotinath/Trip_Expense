@@ -2,7 +2,7 @@
 
 Group trip expenses. One person opens a trip and names the people. Everyone else makes a profile, enters the join code, and claims their name. Spends store date, amount, reason, payer, and who was on the bill — one person or everyone.
 
-The database is a JSON file: `data/store.json`. Locally it is a file on disk. On Vercel it is the same file on the **`main`** branch, read and written through the GitHub Contents API. No other database.
+The ledger is one JSON document (`profiles` + `groups`). **Locally** it lives in `data/store.json`. **Production** uses **Supabase Postgres** when `POSTGRES_URL` is set (Vercel ↔ Supabase integration). Without Postgres, the app can fall back to `data/store.json` on GitHub via the Contents API.
 
 ## Run
 
@@ -18,27 +18,27 @@ npm test
 npm run build
 ```
 
-## Publish (Vercel + GitHub)
+## Publish (Vercel + Supabase)
 
 Repo: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expense)
 
-1. Vercel → Add New → Project → import `rahuljyotinath/Trip_Expense`.
-2. Production branch: **main**.
-3. Environment Variables (Production + Preview):
+1. Vercel → import `rahuljyotinath/Trip_Expense`, production branch **main**.
+2. Connect **Supabase** (Storage / Database integration) so Vercel sets `POSTGRES_URL`.
+3. In the Supabase SQL editor, run [`supabase/migrations/001_ledger_store.sql`](supabase/migrations/001_ledger_store.sql).
+4. One-time import from file or GitHub:
 
-| Name | Value |
-| --- | --- |
-| `GITHUB_TOKEN` | Fine-grained PAT, **Contents: Read and write** on this repo |
-| `GITHUB_REPO` | `rahuljyotinath/Trip_Expense` |
-| `GITHUB_BRANCH` | `main` |
-| `SESSION_SECRET` | Recommended random string for sign-in cookies; optional if `GITHUB_TOKEN` is set (sessions then derive from the token) |
+```bash
+POSTGRES_URL=... GITHUB_TOKEN=... npm run db:import
+```
 
-4. Deploy. If the URL says “Protected by Vercel Authentication”, turn off Deployment Protection for Production (Vercel → Project → Settings → Deployment Protection).
-5. Set `GITHUB_TOKEN` before the first production deploy, or the live site stays browser-only.
+5. Set `SESSION_SECRET` (recommended) for sign-in cookies.
+6. Deploy. `/api/health` should report `mode: "postgres"` and `connected: true`.
 
-Vercel’s `ignoreCommand` in [`vercel.json`](vercel.json) skips redeploys when a push only changes `data/`, so expense saves on `main` usually do not rebuild the site.
+Optional: keep `GITHUB_TOKEN` for import or legacy file backup — Postgres takes precedence when `POSTGRES_URL` is set.
 
-Locally: copy `.env.example` to `.env.local` and set `GITHUB_TOKEN`.
+Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
+
+Vercel’s `ignoreCommand` in [`vercel.json`](vercel.json) skips redeploys when a push only changes `data/`.
 
 ## How a trip works
 

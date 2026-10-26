@@ -458,7 +458,18 @@ export function commitGroupPatch(
   })()
 }
 
+async function ensureClientMode() {
+  if (typeof window === "undefined") return
+  try {
+    await loadHealth()
+  } catch {
+    mode = "unconfigured"
+  }
+}
+
 async function patchGroup(id: string, body: Record<string, unknown>, groupHint?: Group) {
+  await ensureClientMode()
+  if (!id.trim()) throw new Error("Trip not found.")
   if (mode === "unconfigured") {
     const saved = loadSavedProfile()
     if (!saved?.id) throw new Error("Sign in again.")

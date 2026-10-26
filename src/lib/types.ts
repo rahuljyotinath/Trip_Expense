@@ -65,7 +65,7 @@ export type Store = {
   groups: Group[]
 }
 
-export type StorageMode = "github" | "local" | "unconfigured"
+export type StorageMode = "postgres" | "github" | "local" | "unconfigured"
 
 export type Transfer = {
   fromMemberId: string
