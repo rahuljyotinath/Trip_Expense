@@ -29,6 +29,7 @@ import {
   ensureProfileForPatch,
   preparePatchStore,
   resolvePatchActor,
+  storeWithTrip,
   upsertProfileInStore,
 } from "@/lib/store-session"
 
@@ -488,6 +489,7 @@ async function patchGroup(id: string, body: Record<string, unknown>, groupHint?:
     method: "PATCH",
     body: JSON.stringify(body),
   })
+  writeLocalStore(storeWithTrip(readLocalStore(), data.group))
   return data.group
 }
 

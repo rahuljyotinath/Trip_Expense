@@ -87,3 +87,17 @@ test("previewGroupPatch update-expense uses actor when profileId is blank", () =
   assert.equal(next.expenses[0]?.amount, 120)
   assert.equal(next.expenses[0]?.reason, "Tea (updated)")
 })
+
+test("previewGroupPatch delete-expense removes row", () => {
+  const group = seatedGroup()
+  const next = previewGroupPatch(
+    group,
+    {
+      action: "delete-expense",
+      expenseId: "e1",
+      profileId: "p1",
+    },
+    pub
+  )
+  assert.equal(next.expenses.length, 0)
+})

@@ -1,5 +1,7 @@
+import { profileFromId } from "@/lib/auth-ops"
 import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
+import { sessionProfileId } from "@/lib/session"
 import { createGroup, groupByCode, groupsForProfile } from "@/lib/operations"
 
 export async function GET(request: Request) {
@@ -28,6 +30,10 @@ export async function POST(request: Request) {
     return json({ error: "unconfigured" }, 503)
   }
   try {
+    const sessionId = await sessionProfileId()
+    if (!sessionId) {
+      return json({ error: "Sign in again." }, 401)
+    }
     const body = await readBody<{
       name?: string
       currency?: string
@@ -36,16 +42,19 @@ export async function POST(request: Request) {
       memberNames?: string[]
       createdByProfileId?: string
     }>(request)
-    const result = await updateStore((store) =>
-      createGroup(store, {
+    const result = await updateStore((store) => {
+      if (!profileFromId(store, sessionId)) {
+        throw new Error("Sign in again — your account is not on the ledger.")
+      }
+      return createGroup(store, {
         name: body.name ?? "",
         currency: body.currency,
         startDate: body.startDate,
         endDate: body.endDate,
         memberNames: body.memberNames ?? [],
-        createdByProfileId: body.createdByProfileId ?? "",
+        createdByProfileId: sessionId,
       })
-    )
+    })
     return json({ group: result.group })
   } catch (error) {
     return fail(error)

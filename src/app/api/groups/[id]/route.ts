@@ -1,5 +1,6 @@
 import { profileFromId } from "@/lib/auth-ops"
-import { readStore, storageMode, updateStore } from "@/lib/db"
+import { invalidateLoadCache, readStore, storageMode, updateStore } from "@/lib/db"
+import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
 import {
@@ -26,6 +27,8 @@ export async function GET(
   }
   const { id } = await params
   try {
+    await connection()
+    invalidateLoadCache()
     const store = await readStore()
     const group = store.groups.find((item) => item.id === id)
     if (!group) return json({ error: "Trip not found." }, 404)

@@ -122,7 +122,7 @@ function applyGroupPatchOptimistic(input: {
   onDone?: () => void
   refresh?: () => Promise<void>
 }) {
-  const { group, profile, body, onGroup, onError, onBusy, onDone, refresh } = input
+  const { group, profile, body, onGroup, onError, onBusy, onDone } = input
   onBusy(true)
   onError(null)
   commitGroupPatch(group, body, {
@@ -137,7 +137,6 @@ function applyGroupPatchOptimistic(input: {
     },
     onReconciled: (next) => {
       onGroup(next)
-      void refresh?.()
     },
     fetchLatest: () => fetchGroup(group.id),
   }, profile)
@@ -278,6 +277,7 @@ export function WaybillApp() {
         startDate: tripStartDate.trim() || null,
         endDate: tripEndDate.trim() || null,
       })
+      setPersonDraft("")
       await refreshGroups(profile)
       router.push(`/trip/${next.id}`)
       setTripName("")
