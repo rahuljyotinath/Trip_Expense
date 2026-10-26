@@ -8,7 +8,7 @@ import {
   type StorageMode,
   type Store,
 } from "@/lib/types"
-import { logIn, signUp } from "@/lib/auth-ops"
+import { logIn, signUp, updateProfile } from "@/lib/auth-ops"
 import {
   addExpense,
   addMember,
@@ -150,6 +150,31 @@ export async function logInUser(input: { username: string; password: string }) {
   }
   const data = await request<{ profile: PublicProfile }>("/api/auth/login", {
     method: "POST",
+    body: JSON.stringify(input),
+  })
+  saveProfile(data.profile)
+  return data.profile
+}
+
+export async function updateProfileUser(input: {
+  name?: string
+  email?: string | null
+  phone?: string | null
+}) {
+  const saved = loadSavedProfile()
+  if (mode === "unconfigured") {
+    if (!saved?.id) throw new Error("Sign in again.")
+    const result = updateProfile(readLocalStore(), {
+      profileId: saved.id,
+      ...input,
+    })
+    writeLocalStore(result.store)
+    const pub = publicProfile(result.profile)
+    saveProfile(pub)
+    return pub
+  }
+  const data = await request<{ profile: PublicProfile }>("/api/profile", {
+    method: "PATCH",
     body: JSON.stringify(input),
   })
   saveProfile(data.profile)

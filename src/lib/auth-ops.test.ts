@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { logIn, signUp } from "./auth-ops"
+import { logIn, profileNeedsSetup, signUp, updateProfile } from "./auth-ops"
 import { emptyStore, publicProfile } from "./types"
 
 test("signUp and logIn", () => {
@@ -27,6 +27,24 @@ test("signUp rejects duplicate username", () => {
   assert.throws(() =>
     signUp(first.store, { username: "Sam", password: "otherpass99" })
   )
+})
+
+test("updateProfile changes display and contact fields", () => {
+  const created = signUp(emptyStore(), { username: "lee", password: "password123" })
+  const updated = updateProfile(created.store, {
+    profileId: created.profile.id,
+    name: "Lee Park",
+    email: "lee@example.com",
+    phone: null,
+  })
+  assert.equal(updated.profile.name, "Lee Park")
+  assert.equal(updated.profile.email, "lee@example.com")
+  assert.equal(profileNeedsSetup(updated.profile), false)
+})
+
+test("profileNeedsSetup when name matches username", () => {
+  const created = signUp(emptyStore(), { username: "sam", password: "password123" })
+  assert.equal(profileNeedsSetup(created.profile), true)
 })
 
 test("logIn rejects wrong password", () => {

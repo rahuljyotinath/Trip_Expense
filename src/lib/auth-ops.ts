@@ -83,3 +83,39 @@ export function profileFromId(store: Store, profileId: string): Profile | null {
   const profile = store.profiles.find((item) => item.id === profileId)
   return profile ?? null
 }
+
+function cleanOptionalContact(raw: string | undefined | null) {
+  const value = (raw ?? "").trim()
+  return value ? value : null
+}
+
+export function updateProfile(
+  store: Store,
+  input: {
+    profileId: string
+    name?: string
+    email?: string | null
+    phone?: string | null
+  }
+) {
+  const index = store.profiles.findIndex((item) => item.id === input.profileId)
+  if (index === -1) throw new Error("Profile not found.")
+  const current = store.profiles[index]!
+  const name =
+    input.name !== undefined
+      ? cleanDisplayName(input.name, current.username)
+      : current.name
+  const email =
+    input.email !== undefined ? cleanOptionalContact(input.email) : current.email
+  const phone =
+    input.phone !== undefined ? cleanOptionalContact(input.phone) : current.phone
+  const profile: Profile = { ...current, name, email, phone }
+  const profiles = store.profiles.slice()
+  profiles[index] = profile
+  return { store: { ...store, profiles }, profile }
+}
+
+/** True when the user still has the default signup name (username only). */
+export function profileNeedsSetup(profile: Pick<Profile, "name" | "username">) {
+  return profile.name.trim().toLowerCase() === profile.username.trim().toLowerCase()
+}

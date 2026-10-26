@@ -1,10 +1,10 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle,
-  ArrowRight,
   Banknote,
   Check,
   Compass,
@@ -52,8 +52,6 @@ import {
   loadHealth,
   logoutUser,
   fetchSessionProfile,
-  logInUser,
-  signUpUser,
   openTrip,
   clearSavedProfile,
   syncProfileToLocalStore,
@@ -66,10 +64,10 @@ import { settlementBalances, simplifyDebts } from "@/lib/settle"
 import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
+import { profileNeedsSetup } from "@/lib/auth-ops"
 import type { Expense, Group, PublicProfile } from "@/lib/types"
 
-type Screen = "boot" | "auth" | "home" | "create" | "join" | "trip"
-type AuthMode = "login" | "signup"
+type Screen = "boot" | "home" | "create" | "join"
 
 function memberName(group: Group, id: string) {
   return group.members.find((member) => member.id === id)?.name ?? "Unknown"
@@ -146,21 +144,18 @@ function applyGroupPatchOptimistic(input: {
 }
 
 export function WaybillApp() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const joinFromUrl = (searchParams.get("join") ?? "").toUpperCase()
+  const tripFromUrl = (searchParams.get("trip") ?? "").trim()
 
   const [screen, setScreen] = useState<Screen>("boot")
   const [health, setHealth] = useState<Health | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
-  const [group, setGroup] = useState<Group | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const [authMode, setAuthMode] = useState<AuthMode>("login")
-  const [authUsername, setAuthUsername] = useState("")
-  const [authPassword, setAuthPassword] = useState("")
-  const [authDisplayName, setAuthDisplayName] = useState("")
   const [tripName, setTripName] = useState("")
   const [currency, setCurrency] = useState("INR")
   const [tripStartDate, setTripStartDate] = useState("")
@@ -169,11 +164,6 @@ export function WaybillApp() {
   const [personDraft, setPersonDraft] = useState("")
   const [code, setCode] = useState(joinFromUrl)
   const [joinGroup, setJoinGroup] = useState<Group | null>(null)
-
-  const [expenseOpen, setExpenseOpen] = useState(false)
-  const [memberOpen, setMemberOpen] = useState(false)
-  const [paymentOpen, setPaymentOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   async function refreshGroups(nextProfile: PublicProfile) {
     const list = await fetchMyGroups(nextProfile.id)
@@ -191,59 +181,49 @@ export function WaybillApp() {
         ])
         if (cancelled) return
         setHealth(nextHealth)
+        if (tripFromUrl) {
+          router.replace(`/trip/${encodeURIComponent(tripFromUrl)}`)
+          return
+        }
+        if (joinFromUrl) {
+          try {
+            const invited = await fetchGroupByCode(joinFromUrl)
+            router.replace(`/trip/${invited.id}`)
+          } catch {
+            if (!session?.id) {
+              router.replace(`/login?next=${encodeURIComponent("/")}`)
+              return
+            }
+            setCode(joinFromUrl)
+            setScreen("join")
+          }
+          return
+        }
         if (!session?.id || !session?.username) {
           clearSavedProfile()
-          setScreen("auth")
+          router.replace("/login")
           return
         }
         if (cancelled) return
+        if (profileNeedsSetup(session)) {
+          router.replace("/profile/setup")
+          return
+        }
         setProfile(session)
         syncProfileToLocalStore(session)
         await refreshGroups(session)
-        if (joinFromUrl) {
-          setCode(joinFromUrl)
-          setScreen("join")
-          return
-        }
         setScreen("home")
       } catch (err) {
         if (!cancelled) {
           setError(errorText(err))
-          setScreen("auth")
+          router.replace("/login")
         }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [joinFromUrl])
-
-  async function onAuthSubmit() {
-    setBusy(true)
-    setError(null)
-    try {
-      const next =
-        authMode === "signup"
-          ? await signUpUser({
-              username: authUsername,
-              password: authPassword,
-              name: authDisplayName.trim() || undefined,
-            })
-          : await logInUser({
-              username: authUsername,
-              password: authPassword,
-            })
-      setProfile(next)
-      syncProfileToLocalStore(next)
-      setAuthPassword("")
-      await refreshGroups(next)
-      setScreen(joinFromUrl || code ? "join" : "home")
-    } catch (err) {
-      setError(errorText(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  }, [joinFromUrl, tripFromUrl, router])
 
   async function onLogout() {
     setBusy(true)
@@ -251,9 +231,8 @@ export function WaybillApp() {
     try {
       await logoutUser()
       setProfile(null)
-      setGroup(null)
       setGroups([])
-      setScreen("auth")
+      router.replace("/login")
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -299,9 +278,8 @@ export function WaybillApp() {
         startDate: tripStartDate.trim() || null,
         endDate: tripEndDate.trim() || null,
       })
-      setGroup(next)
       await refreshGroups(profile)
-      setScreen("trip")
+      router.push(`/trip/${next.id}`)
       setTripName("")
       setTripStartDate("")
       setTripEndDate("")
@@ -334,10 +312,9 @@ export function WaybillApp() {
     setError(null)
     try {
       const next = await claimSeat(joinGroup.id, memberId, profile.id)
-      setGroup(next)
       setJoinGroup(null)
       await refreshGroups(profile)
-      setScreen("trip")
+      router.push(`/trip/${next.id}`)
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -345,24 +322,8 @@ export function WaybillApp() {
     }
   }
 
-  async function openExisting(id: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      const next = await fetchGroup(id)
-      setGroup(next)
-      setScreen("trip")
-    } catch (err) {
-      setError(errorText(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function copyCode(value: string) {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1400)
+  function openExisting(id: string) {
+    router.push(`/trip/${id}`)
   }
 
   if (screen === "boot") {
@@ -378,15 +339,7 @@ export function WaybillApp() {
       health={health}
       profile={profile}
       onLogout={profile ? onLogout : undefined}
-      onHome={
-        screen === "trip"
-          ? () => {
-              setScreen("home")
-              setGroup(null)
-              setError(null)
-            }
-          : undefined
-      }
+      onHome={undefined}
     >
       {error ? (
         <Alert variant="destructive" className="mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -397,21 +350,6 @@ export function WaybillApp() {
       ) : null}
 
       <div key={screen} className="screen-enter">
-      {screen === "auth" ? (
-        <AuthGate
-          mode={authMode}
-          username={authUsername}
-          password={authPassword}
-          displayName={authDisplayName}
-          busy={busy}
-          onMode={setAuthMode}
-          onUsername={setAuthUsername}
-          onPassword={setAuthPassword}
-          onDisplayName={setAuthDisplayName}
-          onSubmit={onAuthSubmit}
-        />
-      ) : null}
-
       {screen === "home" && profile ? (
         <Home
           profile={profile}
@@ -468,29 +406,6 @@ export function WaybillApp() {
         />
       ) : null}
 
-      {screen === "trip" && profile && group ? (
-        <TripDesk
-          profile={profile}
-          group={group}
-          busy={busy}
-          copied={copied}
-          expenseOpen={expenseOpen}
-          memberOpen={memberOpen}
-          paymentOpen={paymentOpen}
-          onExpenseOpen={setExpenseOpen}
-          onMemberOpen={setMemberOpen}
-          onPaymentOpen={setPaymentOpen}
-          onCopy={copyCode}
-          onRefresh={async () => {
-            const next = await fetchGroup(group.id)
-            setGroup(next)
-            await refreshGroups(profile)
-          }}
-          onGroup={setGroup}
-          onError={setError}
-          onBusy={setBusy}
-        />
-      ) : null}
       </div>
     </Shell>
   )
@@ -515,7 +430,7 @@ function BootLoader() {
   )
 }
 
-function Shell({
+export function Shell({
   children,
   health,
   profile,
@@ -550,6 +465,12 @@ function Shell({
             <>
               <p className="font-medium">{profile.name}</p>
               <p className="text-xs text-muted-foreground">@{profile.username}</p>
+              <Link
+                href="/profile/setup"
+                className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Profile
+              </Link>
               {onLogout ? (
                 <Button variant="link" className="h-auto px-0 text-xs" onClick={onLogout}>
                   Sign out
@@ -570,103 +491,6 @@ function Shell({
       ) : null}
       <main className="flex-1">{children}</main>
     </div>
-  )
-}
-
-function AuthGate({
-  mode,
-  username,
-  password,
-  displayName,
-  busy,
-  onMode,
-  onUsername,
-  onPassword,
-  onDisplayName,
-  onSubmit,
-}: {
-  mode: AuthMode
-  username: string
-  password: string
-  displayName: string
-  busy: boolean
-  onMode: (value: AuthMode) => void
-  onUsername: (value: string) => void
-  onPassword: (value: string) => void
-  onDisplayName: (value: string) => void
-  onSubmit: () => void
-}) {
-  const canSubmit =
-    username.trim().length > 0 && password.length >= 5
-
-  return (
-    <Card className="max-w-xl">
-      <CardHeader>
-        <CardTitle className="font-heading text-3xl">
-          {mode === "login" ? "Sign in" : "Create account"}
-        </CardTitle>
-        <CardDescription>
-          Username and password only — no email or SMS required.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={mode === "login" ? "default" : "outline"}
-            onClick={() => onMode("login")}
-          >
-            Sign in
-          </Button>
-          <Button
-            type="button"
-            variant={mode === "signup" ? "default" : "outline"}
-            onClick={() => onMode("signup")}
-          >
-            Sign up
-          </Button>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="auth-username">Username</Label>
-          <Input
-            id="auth-username"
-            autoFocus
-            value={username}
-            autoComplete="username"
-            placeholder="priya_k"
-            onChange={(event) => onUsername(event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="auth-password">Password</Label>
-          <Input
-            id="auth-password"
-            type="password"
-            value={password}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            onChange={(event) => onPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && canSubmit) onSubmit()
-            }}
-          />
-          <p className="text-xs text-muted-foreground">At least 5 characters.</p>
-        </div>
-        {mode === "signup" ? (
-          <div className="space-y-2">
-            <Label htmlFor="auth-display">Display name (optional)</Label>
-            <Input
-              id="auth-display"
-              value={displayName}
-              placeholder="Priya Sharma"
-              onChange={(event) => onDisplayName(event.target.value)}
-            />
-          </div>
-        ) : null}
-        <Button disabled={busy || !canSubmit} onClick={onSubmit} size="lg">
-          {mode === "login" ? "Sign in" : "Create account"} <ArrowRight />
-        </Button>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -946,7 +770,7 @@ function JoinTrip({
         <div className="flex gap-2">
           <Input
             value={code}
-            placeholder="https://…/?join=…"
+            placeholder="https://…/trip/… or ?join=…"
             onChange={(event) => onCode(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") onLookup()
@@ -1069,9 +893,10 @@ function TripSummaryStrip({
   )
 }
 
-function TripDesk({
+export function TripDesk({
   profile,
   group,
+  tripPath,
   busy,
   copied,
   expenseOpen,
@@ -1085,9 +910,11 @@ function TripDesk({
   onGroup,
   onError,
   onBusy,
+  onClaim,
 }: {
-  profile: PublicProfile
+  profile: PublicProfile | null
   group: Group
+  tripPath: string
   busy: boolean
   copied: boolean
   expenseOpen: boolean
@@ -1101,9 +928,12 @@ function TripDesk({
   onGroup: (group: Group) => void
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
+  onClaim?: (memberId: string) => void
 }) {
-  const seat = mySeat(group, profile.id)
-  const isOpener = group.createdByProfileId === profile.id
+  const seat = profile ? mySeat(group, profile.id) : null
+  const isOpener = profile ? group.createdByProfileId === profile.id : false
+  const canWrite = Boolean(profile && seat)
+  const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
   const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
   const ledgerExpenses = useMemo(
@@ -1135,7 +965,7 @@ function TripDesk({
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const shareUrl =
-    typeof window === "undefined" ? "" : `${window.location.origin}/?join=${group.code}`
+    typeof window === "undefined" ? "" : `${window.location.origin}${tripPath}`
 
   useEffect(() => {
     document.title = `${group.name} — Trip Expenses Balancer`
@@ -1144,8 +974,26 @@ function TripDesk({
     }
   }, [group.name])
 
+  const loginHref = `/login?next=${encodeURIComponent(tripPath)}`
+  const signupHref = `/signup?next=${encodeURIComponent(tripPath)}`
+
   return (
     <div className="space-y-6">
+      {!profile ? (
+        <Alert>
+          <Users />
+          <AlertTitle>Viewing as guest</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Sign in to claim a seat and log spends.</span>
+            <Link href={loginHref} className="font-medium underline underline-offset-4">
+              Sign in
+            </Link>
+            <Link href={signupHref} className="font-medium underline underline-offset-4">
+              Create account
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="font-mono text-[11px] tracking-[0.22em] text-muted-foreground uppercase">
@@ -1188,10 +1036,12 @@ function TripDesk({
             {copied ? <Check /> : <Link2 />}
             {copied ? "Link copied" : "Copy invite link"}
           </Button>
-          <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
-            <Download /> Export CSV
-          </Button>
-          {isOpener ? (
+          {profile && isOpener ? (
+            <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
+              <Download /> Export CSV
+            </Button>
+          ) : null}
+          {isOpener && profile ? (
             <>
               <input
                 ref={importInputRef}
@@ -1222,23 +1072,27 @@ function TripDesk({
               </Button>
             </>
           ) : null}
-          <Button
-            variant="outline"
-            onClick={() => onPaymentOpen(true)}
-            disabled={!seat}
-          >
-            <Banknote /> Paid back
-          </Button>
-          <Button
-            size="lg"
-            onClick={() => {
-              setEditingExpense(null)
-              onExpenseOpen(true)
-            }}
-            disabled={!seat}
-          >
-            <Receipt /> Add spend
-          </Button>
+          {profile ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => onPaymentOpen(true)}
+                disabled={!canWrite}
+              >
+                <Banknote /> Paid back
+              </Button>
+              <Button
+                size="lg"
+                onClick={() => {
+                  setEditingExpense(null)
+                  onExpenseOpen(true)
+                }}
+                disabled={!canWrite}
+              >
+                <Receipt /> Add spend
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -1283,7 +1137,7 @@ function TripDesk({
                     <p className="font-heading text-2xl">
                       {formatMoney(transfer.amount, group.currency)}
                     </p>
-                    {seat ? (
+                    {canWrite && profile ? (
                       <Button
                         size="sm"
                         disabled={busy}
@@ -1322,8 +1176,9 @@ function TripDesk({
               {(group.payments ?? []).map((payment) => {
                 const crossed = Boolean(payment.voidedAt)
                 const canEdit =
-                  payment.createdByProfileId === profile.id ||
-                  group.createdByProfileId === profile.id
+                  profile &&
+                  (payment.createdByProfileId === profile.id ||
+                    group.createdByProfileId === profile.id)
                 return (
                   <div
                     key={payment.id}
@@ -1375,7 +1230,7 @@ function TripDesk({
                 >
                   <span>
                     {member.name}
-                    {member.profileId === profile.id ? " · you" : ""}
+                    {profile && member.profileId === profile.id ? " · you" : ""}
                   </span>
                   <span className={value >= 0 ? "text-moss" : "text-stamp"}>
                     {value >= 0 ? "is owed " : "owes "}
@@ -1409,8 +1264,9 @@ function TripDesk({
                 <div className="grid gap-3 sm:grid-cols-2">
                   {day.expenses.map((expense) => {
                     const canEdit =
-                      expense.createdByProfileId === profile.id ||
-                      group.createdByProfileId === profile.id
+                      profile &&
+                      (expense.createdByProfileId === profile.id ||
+                        group.createdByProfileId === profile.id)
                     const splitLabel = expense.participantIds
                       .map((id) => memberName(group, id))
                       .join(", ")
@@ -1484,7 +1340,7 @@ function TripDesk({
                 <div className="min-w-0 space-y-1">
                   <p className="font-medium">
                     {member.name}
-                    {member.profileId === profile.id ? " · you" : ""}
+                    {profile && member.profileId === profile.id ? " · you" : ""}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {member.profileId
@@ -1512,11 +1368,12 @@ function TripDesk({
                     </p>
                   ) : null}
                 </div>
+                {canWrite && profile ? (
                 <label className="flex shrink-0 flex-col gap-1 text-xs">
                   <span className="text-muted-foreground">Settles cash</span>
                   <select
                     className="rounded-md border bg-background px-2 py-1.5 text-sm disabled:opacity-50"
-                    disabled={!seat || busy}
+                    disabled={busy}
                     value={member.coveredByMemberId ?? member.id}
                     onChange={(event) => {
                       const picked = event.target.value
@@ -1547,28 +1404,60 @@ function TripDesk({
                       ))}
                   </select>
                 </label>
+                ) : null}
               </div>
             )
           })}
-          <Button variant="outline" onClick={() => onMemberOpen(true)}>
-            <Plus /> Add a nickname
-          </Button>
+          {profile && !seat && onClaim ? (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <p className="text-sm font-medium">Claim your seat</p>
+              <p className="text-xs text-muted-foreground">
+                Pick the nickname that is you on this trip.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {group.members.map((member) => {
+                  if (member.profileId) return null
+                  const suggested = claimSuggestion?.id === member.id
+                  return (
+                    <Button
+                      key={member.id}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => onClaim(member.id)}
+                    >
+                      {member.name}
+                      {suggested ? " · looks like you" : ""}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+          {canWrite ? (
+            <Button variant="outline" onClick={() => onMemberOpen(true)}>
+              <Plus /> Add a nickname
+            </Button>
+          ) : null}
         </TabsContent>
       </Tabs>
 
-      <TripEditDialog
-        open={tripEditOpen}
-        group={group}
-        profile={profile}
-        busy={busy}
-        onOpen={setTripEditOpen}
-        onSaved={(next) => {
-          onGroup(next)
-          setTripEditOpen(false)
-        }}
-        onError={onError}
-        onBusy={onBusy}
-      />
+      {profile ? (
+        <TripEditDialog
+          open={tripEditOpen}
+          group={group}
+          profile={profile}
+          busy={busy}
+          onOpen={setTripEditOpen}
+          onSaved={(next) => {
+            onGroup(next)
+            setTripEditOpen(false)
+          }}
+          onError={onError}
+          onBusy={onBusy}
+        />
+      ) : null}
       <Dialog
         open={Boolean(importCsvText)}
         onOpenChange={(open) => {
@@ -1591,7 +1480,7 @@ function TripDesk({
               variant="destructive"
               disabled={busy || !importCsvText}
               onClick={() => {
-                if (!importCsvText) return
+                if (!importCsvText || !profile) return
                 const csv = importCsvText
                 applyGroupPatchOptimistic({
                   group,
@@ -1637,7 +1526,7 @@ function TripDesk({
               variant="destructive"
               disabled={busy || !deleteExpenseTarget}
               onClick={() => {
-                if (!deleteExpenseTarget) return
+                if (!deleteExpenseTarget || !profile) return
                 const expenseId = deleteExpenseTarget.id
                 applyGroupPatchOptimistic({
                   group,
@@ -1660,53 +1549,57 @@ function TripDesk({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <ExpenseDialog
-        open={expenseOpen}
-        expense={editingExpense}
-        group={group}
-        profile={profile}
-        busy={busy}
-        onOpen={(open) => {
-          onExpenseOpen(open)
-          if (!open) setEditingExpense(null)
-        }}
-        onSaved={() => {
-          onExpenseOpen(false)
-          setEditingExpense(null)
-        }}
-        onGroup={onGroup}
-        onRefresh={onRefresh}
-        onError={onError}
-        onBusy={onBusy}
-      />
-      <MemberDialog
-        open={memberOpen}
-        group={group}
-        profile={profile}
-        busy={busy}
-        onOpen={onMemberOpen}
-        onSaved={(next) => {
-          onGroup(next)
-          onMemberOpen(false)
-        }}
-        onRefresh={onRefresh}
-        onError={onError}
-        onBusy={onBusy}
-      />
-      <PaymentDialog
-        open={paymentOpen}
-        group={group}
-        profile={profile}
-        busy={busy}
-        onOpen={onPaymentOpen}
-        onSaved={(next) => {
-          onGroup(next)
-          onPaymentOpen(false)
-        }}
-        onRefresh={onRefresh}
-        onError={onError}
-        onBusy={onBusy}
-      />
+      {profile ? (
+        <>
+          <ExpenseDialog
+            open={expenseOpen}
+            expense={editingExpense}
+            group={group}
+            profile={profile}
+            busy={busy}
+            onOpen={(open) => {
+              onExpenseOpen(open)
+              if (!open) setEditingExpense(null)
+            }}
+            onSaved={() => {
+              onExpenseOpen(false)
+              setEditingExpense(null)
+            }}
+            onGroup={onGroup}
+            onRefresh={onRefresh}
+            onError={onError}
+            onBusy={onBusy}
+          />
+          <MemberDialog
+            open={memberOpen}
+            group={group}
+            profile={profile}
+            busy={busy}
+            onOpen={onMemberOpen}
+            onSaved={(next) => {
+              onGroup(next)
+              onMemberOpen(false)
+            }}
+            onRefresh={onRefresh}
+            onError={onError}
+            onBusy={onBusy}
+          />
+          <PaymentDialog
+            open={paymentOpen}
+            group={group}
+            profile={profile}
+            busy={busy}
+            onOpen={onPaymentOpen}
+            onSaved={(next) => {
+              onGroup(next)
+              onPaymentOpen(false)
+            }}
+            onRefresh={onRefresh}
+            onError={onError}
+            onBusy={onBusy}
+          />
+        </>
+      ) : null}
     </div>
   )
 }
