@@ -41,12 +41,9 @@ export type Health = {
   warning: string | null
   /** Transient reachability failure (not a storage config issue). */
   notice?: string | null
-  repo: string | null
   connected: boolean
-  githubUrl: string | null
-  branch?: string | null
-  filePath?: string | null
   error?: string | null
+  ledgerVersion?: number | null
 }
 
 const HEALTH_CACHE_MS = 45_000
@@ -242,9 +239,7 @@ function healthReachabilityNotice(): Health {
     mode: "unconfigured",
     warning: null,
     notice,
-    repo: "rahuljyotinath/Trip_Expense",
     connected: false,
-    githubUrl: "https://github.com/rahuljyotinath/Trip_Expense",
     error: "Health check failed.",
   }
 }

@@ -3,17 +3,15 @@
  *
  *   POSTGRES_URL=... npx tsx scripts/import-ledger-to-postgres.ts
  *
- * Source: data/store.json, or GitHub store.json when GITHUB_TOKEN is set.
+ * Source: data/store.json (or pass a path as the first argument).
  */
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { Octokit } from "octokit"
 import postgres from "postgres"
-import { resolveGithubTarget } from "../src/lib/github-target"
 import { emptyStore, normalizeStore, type Store } from "../src/lib/types"
 
 const LEDGER_ROW_ID = "main"
-const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
+const DEFAULT_PATH = path.join(process.cwd(), "data", "store.json")
 
 function asStore(value: unknown): Store {
   if (!value || typeof value !== "object") return emptyStore()
@@ -24,28 +22,9 @@ function asStore(value: unknown): Store {
   })
 }
 
-async function loadFromLocal() {
-  const raw = await fs.readFile(LOCAL_PATH, "utf8")
+async function loadFromFile(filePath: string) {
+  const raw = await fs.readFile(filePath, "utf8")
   return asStore(JSON.parse(raw))
-}
-
-async function loadFromGithub() {
-  const token = process.env.GITHUB_TOKEN?.trim()
-  if (!token) return null
-  const target = resolveGithubTarget()
-  const octokit = new Octokit({ auth: token })
-  const response = await octokit.rest.repos.getContent({
-    owner: target.owner,
-    repo: target.repo,
-    path: target.filePath,
-    ref: target.branch,
-  })
-  if (Array.isArray(response.data) || response.data.type !== "file") {
-    throw new Error("GitHub path is not a file.")
-  }
-  const encoded = response.data.content.replace(/\n/g, "")
-  const raw = Buffer.from(encoded, "base64").toString("utf8")
-  return asStore(JSON.parse(raw || "{}"))
 }
 
 async function main() {
@@ -56,11 +35,12 @@ async function main() {
     process.exit(1)
   }
 
+  const source = process.argv[2]?.trim() || DEFAULT_PATH
   let store: Store
   try {
-    store = (await loadFromGithub()) ?? (await loadFromLocal())
+    store = await loadFromFile(source)
   } catch (error) {
-    console.error("Could not load source ledger:", error)
+    console.error(`Could not load ledger from ${source}:`, error)
     process.exit(1)
   }
 
@@ -80,7 +60,7 @@ async function main() {
     SELECT version FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
   `
   console.log(
-    `Imported ${store.profiles.length} profiles, ${store.groups.length} groups (version ${rows[0]?.version ?? "?"}).`
+    `Imported ${store.profiles.length} profiles, ${store.groups.length} groups from ${source} (version ${rows[0]?.version ?? "?"}).`
   )
   await sql.end({ timeout: 5 })
 }

@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { Octokit } from "octokit"
 import postgres from "postgres"
 import {
   emptyStore,
@@ -11,33 +10,20 @@ import {
   type Profile,
   type Store,
 } from "./types"
-import {
-  githubUrl,
-  resolveGithubTarget,
-  type GithubTarget,
-} from "./github-target"
-import { githubConfig, postgresConfig, storageMode } from "./storage-mode"
+import { postgresConfig, storageMode } from "./storage-mode"
 import { storesEqual } from "./store-compare"
 
-export { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 export { postgresConfig, storageMode } from "./storage-mode"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
 const LEDGER_ROW_ID = "main"
 
-const LOAD_CACHE_MS = Number(process.env.GITHUB_LOAD_CACHE_MS) || 3000
+const LOAD_CACHE_MS =
+  Number(process.env.LEDGER_LOAD_CACHE_MS || process.env.GITHUB_LOAD_CACHE_MS) || 3000
 
 type Loaded = {
   store: Store
-  sha?: string
   version?: number
-}
-
-export type GithubProbe = GithubTarget & {
-  connected: boolean
-  githubUrl: string
-  sha?: string
-  error: string | null
 }
 
 export type PostgresProbe = {
@@ -73,16 +59,6 @@ function getPostgres() {
     })
   }
   return postgresClient
-}
-
-function githubErrorMessage(error: unknown) {
-  const status = (error as { status?: number }).status
-  const message = error instanceof Error ? error.message : "GitHub request failed."
-  if (status === 401) return "GitHub token was rejected."
-  if (status === 403) return "GitHub token cannot write this repo. Needs Contents: Read and write."
-  if (status === 404) return "GitHub repo not found, or the token cannot see it."
-  if (status === 409) return "GitHub repo is empty. First Contents write should create data/store.json."
-  return message
 }
 
 function isVersionConflict(error: unknown) {
@@ -122,76 +98,6 @@ export async function probePostgres(): Promise<PostgresProbe> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Postgres request failed."
     return { connected: false, error: message }
-  }
-}
-
-/** Health / status: repo reachability only (no Contents read). */
-export async function probeGithubRepoOnly(): Promise<GithubProbe> {
-  const target = resolveGithubTarget()
-  const base: GithubProbe = {
-    ...target,
-    connected: false,
-    githubUrl: githubUrl(target),
-    error: null,
-  }
-  const config = githubConfig()
-  if (!config) {
-    return {
-      ...base,
-      error: `Set GITHUB_TOKEN with Contents: Read and write on ${target.fullName}.`,
-    }
-  }
-  const octokit = new Octokit({ auth: config.token })
-  try {
-    await octokit.rest.repos.get({ owner: config.owner, repo: config.repo })
-    return { ...base, connected: true, error: null }
-  } catch (error) {
-    return { ...base, error: githubErrorMessage(error) }
-  }
-}
-
-export async function probeGithub(): Promise<GithubProbe> {
-  const target = resolveGithubTarget()
-  const base: GithubProbe = {
-    ...target,
-    connected: false,
-    githubUrl: githubUrl(target),
-    error: null,
-  }
-  const config = githubConfig()
-  if (!config) {
-    return {
-      ...base,
-      error: `Set GITHUB_TOKEN with Contents: Read and write on ${target.fullName}.`,
-    }
-  }
-
-  const octokit = new Octokit({ auth: config.token })
-  try {
-    await octokit.rest.repos.get({ owner: config.owner, repo: config.repo })
-  } catch (error) {
-    return { ...base, error: githubErrorMessage(error) }
-  }
-
-  const cached = peekFreshLoadCache()
-  if (cached?.sha) {
-    return { ...base, connected: true, sha: cached.sha, error: null }
-  }
-
-  try {
-    const loaded = await readGithub()
-    setLoadCache(loaded)
-    if (loaded.sha) {
-      return { ...base, connected: true, sha: loaded.sha, error: null }
-    }
-    return { ...base, connected: true, error: null }
-  } catch (error) {
-    const status = (error as { status?: number }).status
-    if (status === 404) {
-      setLoadCache({ store: emptyStore() })
-      return { ...base, connected: true, error: null }
-    }
-    return { ...base, error: githubErrorMessage(error) }
   }
 }
 
@@ -265,59 +171,13 @@ async function writePostgres(store: Store, expectedVersion: number) {
   }
 }
 
-async function readGithub(): Promise<Loaded> {
-  const config = githubConfig()
-  if (!config) throw new Error("GitHub file storage is not configured.")
-  const octokit = new Octokit({ auth: config.token })
-  try {
-    const response = await octokit.rest.repos.getContent({
-      owner: config.owner,
-      repo: config.repo,
-      path: config.filePath,
-      ref: config.branch,
-    })
-    if (Array.isArray(response.data) || response.data.type !== "file") {
-      throw new Error("GitHub path is not a file.")
-    }
-    const encoded = response.data.content.replace(/\n/g, "")
-    const raw = Buffer.from(encoded, "base64").toString("utf8")
-    return { store: asStore(JSON.parse(raw || "{}")), sha: response.data.sha }
-  } catch (error) {
-    const status = (error as { status?: number }).status
-    if (status === 404) return { store: emptyStore() }
-    throw error
-  }
-}
-
-async function writeGithub(store: Store, sha?: string) {
-  const config = githubConfig()
-  if (!config) throw new Error("GitHub file storage is not configured.")
-  const octokit = new Octokit({ auth: config.token })
-  await octokit.rest.repos.createOrUpdateFileContents({
-    owner: config.owner,
-    repo: config.repo,
-    path: config.filePath,
-    message: sha
-      ? "Trip Expenses Balancer: update trip ledger"
-      : "Trip Expenses Balancer: create trip ledger",
-    content: Buffer.from(`${JSON.stringify(store)}\n`).toString("base64"),
-    branch: config.branch,
-    ...(sha ? { sha } : {}),
-  })
-}
-
 async function load(force = false): Promise<Loaded> {
   if (!force) {
     const cached = peekFreshLoadCache()
     if (cached) return cached
   }
   const mode = storageMode()
-  const loaded =
-    mode === "postgres"
-      ? await readPostgres()
-      : mode === "github"
-        ? await readGithub()
-        : await readLocal()
+  const loaded = mode === "postgres" ? await readPostgres() : await readLocal()
   setLoadCache(loaded)
   return loaded
 }
@@ -326,11 +186,6 @@ async function save(store: Store, loaded: Loaded) {
   const mode = storageMode()
   if (mode === "postgres") {
     await writePostgres(store, loaded.version ?? 0)
-    invalidateLoadCache()
-    return
-  }
-  if (mode === "github") {
-    await writeGithub(store, loaded.sha)
     invalidateLoadCache()
     return
   }
@@ -448,22 +303,14 @@ export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) 
   })
 }
 
-export function storageErrorMessage(
-  github?: GithubProbe,
-  postgres?: PostgresProbe
-) {
+export function storageErrorMessage(postgres?: PostgresProbe) {
   const mode = storageMode()
   if (mode === "postgres") {
     if (postgres && !postgres.connected) return postgres.error
     return null
   }
-  if (github && !github.connected) {
-    if (mode === "unconfigured" || mode === "github") {
-      return github.error
-    }
-  }
   if (mode === "unconfigured") {
-    return "This Vercel deploy has no database. Add POSTGRES_URL (Supabase) or GITHUB_TOKEN for GitHub file storage."
+    return "This Vercel deploy has no database. Set POSTGRES_URL (Supabase)."
   }
   return null
 }

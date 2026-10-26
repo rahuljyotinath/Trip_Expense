@@ -2,7 +2,7 @@
 
 Group trip expenses. One person opens a trip and names the people. Everyone else makes a profile, enters the join code, and claims their name. Spends store date, amount, reason, payer, and who was on the bill — one person or everyone.
 
-The ledger is one JSON document (`profiles` + `groups`). **Locally** it lives in `data/store.json`. **Production** uses **Supabase Postgres** when `POSTGRES_URL` is set (Vercel ↔ Supabase integration). Without Postgres, the app can fall back to `data/store.json` on GitHub via the Contents API.
+The ledger is one JSON document (`profiles` + `groups`). **Locally** it lives in `data/store.json`. **Production** uses **Supabase Postgres** when `POSTGRES_URL` is set (Vercel ↔ Supabase integration).
 
 ## Run
 
@@ -25,16 +25,15 @@ Repo: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expen
 1. Vercel → import `rahuljyotinath/Trip_Expense`, production branch **main**.
 2. Connect **Supabase** (Storage / Database integration) so Vercel sets `POSTGRES_URL`.
 3. In the Supabase SQL editor, run [`supabase/migrations/001_ledger_store.sql`](supabase/migrations/001_ledger_store.sql).
-4. One-time import from file or GitHub:
+4. One-time import from a JSON file (default `data/store.json`; final GitHub snapshot in `data/backups/`):
 
 ```bash
-POSTGRES_URL=... GITHUB_TOKEN=... npm run db:import
+POSTGRES_URL=... npm run db:import
+# or: POSTGRES_URL=... npx tsx scripts/import-ledger-to-postgres.ts data/backups/github-store-20261027.json
 ```
 
-5. Set `SESSION_SECRET` (recommended) for sign-in cookies.
+5. Set `SESSION_SECRET` for sign-in cookies.
 6. Deploy. `/api/health` should report `mode: "postgres"` and `connected: true`.
-
-Optional: keep `GITHUB_TOKEN` for import or legacy file backup — Postgres takes precedence when `POSTGRES_URL` is set.
 
 Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
 

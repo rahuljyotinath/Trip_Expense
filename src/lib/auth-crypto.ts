@@ -12,17 +12,11 @@ const SCRYPT_R = 8
 const SCRYPT_P = 1
 const KEY_LEN = 64
 
-function sessionSecretFromGithubToken(token: string) {
-  return createHmac("sha256", "teb-session-v1").update(token).digest("hex")
-}
-
 function secret() {
   const explicit = process.env.SESSION_SECRET?.trim()
   if (explicit) return explicit
-  const github = process.env.GITHUB_TOKEN?.trim()
-  if (github) return sessionSecretFromGithubToken(github)
   if (process.env.NODE_ENV === "production") {
-    throw new Error("Set SESSION_SECRET or GITHUB_TOKEN for sign-in sessions.")
+    throw new Error("Set SESSION_SECRET for sign-in sessions.")
   }
   return "dev-only-session-secret"
 }
