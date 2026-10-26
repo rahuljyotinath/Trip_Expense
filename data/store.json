@@ -135,6 +135,27 @@
       ],
       "expenses": [
         {
+          "id": "e_8a98e9ebb4eff8a4",
+          "date": "2026-10-20",
+          "amount": 60,
+          "reason": "Pani - 4L",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_5c314a86d2cc9721",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:23:42.658Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_38047ff7872a532d",
           "date": "2026-10-19",
           "amount": 90,
