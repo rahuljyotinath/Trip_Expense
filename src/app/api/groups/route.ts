@@ -1,6 +1,7 @@
 import { profileFromId } from "@/lib/auth-ops"
 import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
+import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
 import { createGroup, groupByCode, groupsForProfile } from "@/lib/operations"
 
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
   const profileId = url.searchParams.get("profileId")
   const code = url.searchParams.get("code")
   try {
+    await connection()
     const store = await readStore()
     if (code) {
       const group = groupByCode(store, code)

@@ -4,8 +4,10 @@ import { Octokit } from "octokit"
 import postgres from "postgres"
 import {
   emptyStore,
+  normalizeGroup,
   normalizeProfile,
   normalizeStore,
+  type Group,
   type Profile,
   type Store,
 } from "./types"
@@ -315,6 +317,11 @@ export async function readStore() {
   return (await load()).store
 }
 
+export async function readStoreFresh() {
+  invalidateLoadCache()
+  return (await load(true)).store
+}
+
 function profilesFromUnknown(value: unknown): Profile[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => normalizeProfile(item as Profile))
@@ -341,6 +348,31 @@ async function readPostgresProfileById(profileId: string): Promise<Profile | nul
   `
   const row = rows[0]?.profile
   return row ? normalizeProfile(row) : null
+}
+
+async function readPostgresGroupById(groupId: string): Promise<Group | null> {
+  const sql = getPostgres()
+  const rows = await sql<{ trip: Group }[]>`
+    SELECT elem AS trip
+    FROM ledger_store,
+      jsonb_array_elements(data->'groups') AS elem
+    WHERE ledger_store.id = ${LEDGER_ROW_ID}
+      AND elem->>'id' = ${groupId}
+    LIMIT 1
+  `
+  const row = rows[0]?.trip
+  return row ? normalizeGroup(row) : null
+}
+
+/** Trip GET: one group row when on Postgres (avoids loading full ledger). */
+export async function readGroupById(id: string): Promise<Group | null> {
+  const groupId = id.trim()
+  if (!groupId) return null
+  if (storageMode() === "postgres") {
+    return readPostgresGroupById(groupId)
+  }
+  const store = await readStore()
+  return store.groups.find((item) => item.id === groupId) ?? null
 }
 
 /** Auth login: profiles only (avoids loading full trip ledger). */

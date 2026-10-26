@@ -1,5 +1,12 @@
 import { profileFromId } from "@/lib/auth-ops"
-import { invalidateLoadCache, readStore, storageMode, updateStore } from "@/lib/db"
+import {
+  invalidateLoadCache,
+  probePostgres,
+  readGroupById,
+  readStoreFresh,
+  storageMode,
+  updateStore,
+} from "@/lib/db"
 import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
@@ -29,9 +36,26 @@ export async function GET(
   try {
     await connection()
     invalidateLoadCache()
-    const store = await readStore()
-    const group = store.groups.find((item) => item.id === id)
-    if (!group) return json({ error: "Trip not found." }, 404)
+    let group = await readGroupById(id)
+    if (!group) {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      invalidateLoadCache()
+      if (storageMode() === "postgres") {
+        group = await readGroupById(id)
+      } else {
+        const store = await readStoreFresh()
+        group = store.groups.find((item) => item.id === id) ?? null
+      }
+    }
+    if (!group) {
+      const mode = storageMode()
+      const postgres =
+        mode === "postgres" ? await probePostgres() : { version: undefined }
+      console.warn(
+        `[groups GET] trip not found id=${id} mode=${mode} ledgerVersion=${postgres.version ?? "n/a"}`
+      )
+      return json({ error: "Trip not found." }, 404)
+    }
     return json({ group })
   } catch (error) {
     return fail(error)

@@ -267,14 +267,50 @@ export async function fetchGroupByCode(code: string) {
   return data.group
 }
 
+async function requestGroupById(id: string, allowRetry: boolean): Promise<Group> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const response = await fetch(`/api/groups/${id}`, {
+      credentials: "include",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+    })
+    const data = (await response.json().catch(() => ({}))) as {
+      group?: Group
+      error?: string
+    }
+    if (response.status === 503 || data.error === "unconfigured") {
+      mode = "unconfigured"
+      throw new Error("unconfigured")
+    }
+    if (response.status === 404 && data.error === "Trip not found." && allowRetry) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return requestGroupById(id, false)
+    }
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed.")
+    }
+    if (!data.group) throw new Error("Trip not found.")
+    return data.group
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Request timed out. Check your connection and try again.")
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 export async function fetchGroup(id: string) {
+  await ensureClientMode()
   if (mode === "unconfigured") {
     const group = readLocalStore().groups.find((item) => item.id === id)
     if (!group) throw new Error("Trip not found.")
     return group
   }
-  const data = await request<{ group: Group }>(`/api/groups/${id}`)
-  return data.group
+  return requestGroupById(id, true)
 }
 
 export async function openTrip(input: {
