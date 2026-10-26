@@ -135,6 +135,23 @@
       ],
       "expenses": [
         {
+          "id": "e_365e799ea78dd84d",
+          "date": "2026-10-19",
+          "amount": 700,
+          "reason": "Cab1 - Beltola to Ghy airport",
+          "paidByMemberId": "m_70af3cd924d1977e",
+          "participantIds": [
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:13:18.623Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_3111556d01eaefeb",
           "date": "2026-10-19",
           "amount": 789,
