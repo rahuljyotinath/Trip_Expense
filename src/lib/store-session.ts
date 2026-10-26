@@ -50,3 +50,24 @@ export function preparePatchStore(
   if (session) next = upsertProfileInStore(next, session)
   return next
 }
+
+/** Ensure preview mutators can resolve the actor profile (e.g. from roster seat). */
+export function ensureProfileForPatch(
+  store: Store,
+  group: Group,
+  profileId: string
+): Store {
+  const id = profileId.trim()
+  if (!id) return store
+  if (store.profiles.some((item) => item.id === id)) return store
+  const member = group.members.find((item) => item.profileId === id)
+  if (!member) return store
+  return upsertProfileInStore(store, {
+    id,
+    username: "",
+    name: member.name,
+    email: null,
+    phone: null,
+    createdAt: new Date(0).toISOString(),
+  })
+}

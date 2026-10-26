@@ -26,6 +26,7 @@ import {
   voidPayment,
 } from "@/lib/operations"
 import {
+  ensureProfileForPatch,
   preparePatchStore,
   resolvePatchActor,
   upsertProfileInStore,
@@ -375,8 +376,11 @@ export function previewGroupPatch(
   actor?: PublicProfile | null
 ): Group {
   const session = resolvePatchActor(actor, loadSavedProfile())
+  if (!session?.id) throw new Error("Sign in again.")
   if (actor) syncProfileToLocalStore(actor)
-  const store = preparePatchStore(readLocalStore(), group, session)
+  const profileId = String(body.profileId ?? session.id)
+  let store = preparePatchStore(readLocalStore(), group, session)
+  store = ensureProfileForPatch(store, group, profileId)
   const result = runGroupPatchMutator(store, group.id, body)
   if (!result) throw new Error("Unknown action.")
   return result.group
@@ -408,7 +412,9 @@ export function commitGroupPatch(
       const server = await patchGroup(group.id, body)
       handlers.onReconciled?.(server)
     } catch (error) {
-      handlers.onError(error instanceof Error ? error.message : "Could not save.")
+      const raw = error instanceof Error ? error.message : "Could not save."
+      const message = raw.startsWith("Could not save") ? raw : `Could not save: ${raw}`
+      handlers.onError(message)
       if (handlers.fetchLatest) {
         try {
           handlers.onReconciled?.(await handlers.fetchLatest())

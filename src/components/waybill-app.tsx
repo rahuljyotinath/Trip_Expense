@@ -55,6 +55,7 @@ import {
   logInUser,
   signUpUser,
   openTrip,
+  clearSavedProfile,
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
@@ -188,7 +189,8 @@ export function WaybillApp() {
         if (cancelled) return
         setHealth(nextHealth)
         const session = await fetchSessionProfile()
-        if (!session?.username) {
+        if (!session?.id || !session?.username) {
+          clearSavedProfile()
           setScreen("auth")
           return
         }

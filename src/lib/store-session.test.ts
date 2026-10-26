@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { addExpense } from "./operations"
 import {
+  ensureProfileForPatch,
   preparePatchStore,
   resolvePatchActor,
   upsertProfileInStore,
@@ -68,6 +69,24 @@ test("preparePatchStore with actor only matches add-expense profileId", () => {
   const group = seatedGroup()
   const store = preparePatchStore(emptyStore(), group, pub)
   assert.equal(store.profiles.some((item) => item.id === pub.id), true)
+})
+
+test("ensureProfileForPatch builds profile from seated roster", () => {
+  const group = seatedGroup()
+  let store = preparePatchStore(emptyStore(), group, null)
+  store = ensureProfileForPatch(store, group, "p1")
+  assert.equal(store.profiles.length, 1)
+  assert.equal(store.profiles[0]?.name, "Rahul")
+  const { group: next } = addExpense(store, {
+    groupId: group.id,
+    date: "2026-03-01",
+    amount: 50,
+    reason: "Snack",
+    paidByMemberId: "m1",
+    participantIds: ["m1", "m2"],
+    createdByProfileId: "p1",
+  })
+  assert.equal(next.expenses.length, 1)
 })
 
 test("preparePatchStore without session still fails addExpense", () => {

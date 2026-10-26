@@ -1,5 +1,7 @@
+import { profileFromId } from "@/lib/auth-ops"
 import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
+import { sessionProfileId } from "@/lib/session"
 import {
   addExpense,
   addMember,
@@ -42,6 +44,11 @@ export async function PATCH(
   }
   const { id } = await params
   try {
+    const sessionId = await sessionProfileId()
+    if (!sessionId) {
+      return json({ error: "Sign in again." }, 401)
+    }
+
     const body = await readBody<{
       action?: string
       name?: string
@@ -66,26 +73,37 @@ export async function PATCH(
     }>(request)
 
     const result = await updateStore((store) => {
+      const requireSessionProfile = () => {
+        const profile = profileFromId(store, sessionId)
+        if (!profile) {
+          throw new Error("Sign in again — your account is not on the ledger.")
+        }
+        return profile
+      }
+
       if (body.action === "claim") {
+        requireSessionProfile()
         return claimMember(store, {
           groupId: id,
           memberId: body.memberId ?? "",
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
         })
       }
       if (body.action === "add-member") {
         return addMember(store, id, body.name ?? "")
       }
       if (body.action === "update-group") {
+        requireSessionProfile()
         return updateGroup(store, {
           groupId: id,
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
           name: body.name,
           startDate: body.startDate,
           endDate: body.endDate,
         })
       }
       if (body.action === "add-expense") {
+        requireSessionProfile()
         return addExpense(store, {
           groupId: id,
           date: body.date ?? "",
@@ -95,21 +113,23 @@ export async function PATCH(
           participantIds: body.participantIds ?? [],
           split: body.split,
           shares: body.shares,
-          createdByProfileId: body.profileId ?? "",
+          createdByProfileId: sessionId,
         })
       }
       if (body.action === "delete-expense") {
+        requireSessionProfile()
         return deleteExpense(store, {
           groupId: id,
           expenseId: body.expenseId ?? "",
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
         })
       }
       if (body.action === "update-expense") {
+        requireSessionProfile()
         return updateExpense(store, {
           groupId: id,
           expenseId: body.expenseId ?? "",
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
           date: body.date ?? "",
           amount: Number(body.amount),
           reason: body.reason ?? "",
@@ -120,39 +140,44 @@ export async function PATCH(
         })
       }
       if (body.action === "void-expense") {
+        requireSessionProfile()
         return voidExpense(store, {
           groupId: id,
           expenseId: body.expenseId ?? "",
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
           restore: body.restore,
         })
       }
       if (body.action === "add-payment") {
+        requireSessionProfile()
         return addPayment(store, {
           groupId: id,
           date: body.date ?? "",
           amount: Number(body.amount),
           fromMemberId: body.fromMemberId ?? "",
           toMemberId: body.toMemberId ?? "",
-          createdByProfileId: body.profileId ?? "",
+          createdByProfileId: sessionId,
         })
       }
       if (body.action === "void-payment") {
+        requireSessionProfile()
         return voidPayment(store, {
           groupId: id,
           paymentId: body.paymentId ?? "",
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
           restore: body.restore,
         })
       }
       if (body.action === "import-trip-csv") {
+        requireSessionProfile()
         return importTripCsv(store, {
           groupId: id,
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
           csv: body.csv ?? "",
         })
       }
       if (body.action === "cover-member") {
+        requireSessionProfile()
         const rawCover = body.coveredByMemberId
         return setMemberCover(store, {
           groupId: id,
@@ -161,7 +186,7 @@ export async function PATCH(
             rawCover === null || rawCover === undefined || rawCover === ""
               ? null
               : String(rawCover),
-          profileId: body.profileId ?? "",
+          profileId: sessionId,
         })
       }
       throw new Error("Unknown action.")
