@@ -68,21 +68,42 @@ function writeLocalStore(store: Store) {
   window.localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(store))
 }
 
+const REQUEST_TIMEOUT_MS = 25_000
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  })
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string }
-  if (response.status === 503 || data.error === "unconfigured") {
-    mode = "unconfigured"
-    throw new Error("unconfigured")
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const parentSignal = init?.signal
+  const onParentAbort = () => controller.abort()
+  if (parentSignal) {
+    if (parentSignal.aborted) controller.abort()
+    else parentSignal.addEventListener("abort", onParentAbort, { once: true })
   }
-  if (!response.ok) {
-    throw new Error(data.error || "Request failed.")
+  try {
+    const response = await fetch(url, {
+      credentials: "include",
+      ...init,
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    })
+    const data = (await response.json().catch(() => ({}))) as T & { error?: string }
+    if (response.status === 503 || data.error === "unconfigured") {
+      mode = "unconfigured"
+      throw new Error("unconfigured")
+    }
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed.")
+    }
+    return data
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("Request timed out. Check your connection and try again.")
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+    if (parentSignal) parentSignal.removeEventListener("abort", onParentAbort)
   }
-  return data
 }
 
 export function loadSavedProfile(): PublicProfile | null {

@@ -2,7 +2,13 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { Octokit } from "octokit"
 import postgres from "postgres"
-import { emptyStore, normalizeStore, type Store } from "./types"
+import {
+  emptyStore,
+  normalizeProfile,
+  normalizeStore,
+  type Profile,
+  type Store,
+} from "./types"
 import {
   githubUrl,
   resolveGithubTarget,
@@ -57,7 +63,12 @@ function getPostgres() {
   const url = postgresConfig()
   if (!url) throw new Error("Postgres is not configured.")
   if (!postgresClient) {
-    postgresClient = postgres(url, { max: 1, prepare: false })
+    postgresClient = postgres(url, {
+      max: 1,
+      prepare: false,
+      connect_timeout: 10,
+      idle_timeout: 20,
+    })
   }
   return postgresClient
 }
@@ -302,6 +313,56 @@ async function save(store: Store, loaded: Loaded) {
 
 export async function readStore() {
   return (await load()).store
+}
+
+function profilesFromUnknown(value: unknown): Profile[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => normalizeProfile(item as Profile))
+}
+
+async function readPostgresProfiles(): Promise<Profile[]> {
+  const sql = getPostgres()
+  const rows = await sql<{ profiles: unknown }[]>`
+    SELECT data->'profiles' AS profiles FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
+  `
+  if (rows.length === 0) return []
+  return profilesFromUnknown(rows[0]!.profiles)
+}
+
+async function readPostgresProfileById(profileId: string): Promise<Profile | null> {
+  const sql = getPostgres()
+  const rows = await sql<{ profile: Profile }[]>`
+    SELECT elem AS profile
+    FROM ledger_store,
+      jsonb_array_elements(data->'profiles') AS elem
+    WHERE ledger_store.id = ${LEDGER_ROW_ID}
+      AND elem->>'id' = ${profileId}
+    LIMIT 1
+  `
+  const row = rows[0]?.profile
+  return row ? normalizeProfile(row) : null
+}
+
+/** Auth login: profiles only (avoids loading full trip ledger). */
+export async function readProfilesForAuth(): Promise<Store> {
+  const mode = storageMode()
+  if (mode === "postgres") {
+    const profiles = await readPostgresProfiles()
+    return normalizeStore({ profiles, groups: [] })
+  }
+  const store = await readStore()
+  return normalizeStore({ profiles: store.profiles, groups: [] })
+}
+
+/** Session restore: one profile row when on Postgres. */
+export async function readProfileForSession(profileId: string): Promise<Profile | null> {
+  const id = profileId.trim()
+  if (!id) return null
+  if (storageMode() === "postgres") {
+    return readPostgresProfileById(id)
+  }
+  const store = await readStore()
+  return store.profiles.find((item) => item.id === id) ?? null
 }
 
 export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) {

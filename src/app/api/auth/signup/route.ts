@@ -3,8 +3,10 @@ import { storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
+import { connection } from "next/server"
 
 export async function POST(request: Request) {
+  await connection()
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }

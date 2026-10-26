@@ -1,16 +1,18 @@
 import { logIn } from "@/lib/auth-ops"
-import { readStore, storageMode } from "@/lib/db"
+import { readProfilesForAuth, storageMode } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
+import { connection } from "next/server"
 
 export async function POST(request: Request) {
+  await connection()
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
   try {
     const body = await readBody<{ username?: string; password?: string }>(request)
-    const store = await readStore()
+    const store = await readProfilesForAuth()
     const result = logIn(store, {
       username: body.username ?? "",
       password: body.password ?? "",

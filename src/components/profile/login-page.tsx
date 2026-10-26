@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { AlertCircle, ArrowRight } from "lucide-react"
 import { AuthChrome } from "@/components/profile/auth-chrome"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { profileNeedsSetup } from "@/lib/auth-ops"
-import { logInUser } from "@/lib/client-api"
+import { loadHealth, logInUser, type Health } from "@/lib/client-api"
 import { safeReturnPath } from "@/lib/navigation"
 
 function returnTarget(searchParams: URLSearchParams) {
@@ -31,8 +31,29 @@ export function LoginPage() {
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [health, setHealth] = useState<Health | null>(null)
 
-  const canSubmit = username.trim().length > 0 && password.length >= 5
+  useEffect(() => {
+    let cancelled = false
+    void loadHealth().then((next) => {
+      if (!cancelled) setHealth(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const storageBlocked =
+    health?.mode === "unconfigured" || (health !== null && !health.connected)
+  const storageWarning =
+    health?.mode === "unconfigured"
+      ? health.warning ?? "This deploy has no database configured."
+      : health && !health.connected
+        ? health.error ?? "Cannot reach the trip ledger."
+        : null
+
+  const canSubmit =
+    username.trim().length > 0 && password.length >= 5 && !storageBlocked
 
   async function onSubmit() {
     setBusy(true)
@@ -62,6 +83,13 @@ export function LoginPage() {
 
   return (
     <AuthChrome title="Sign in to your ledger profile">
+      {storageWarning ? (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle />
+          <AlertTitle>Ledger unavailable</AlertTitle>
+          <AlertDescription>{storageWarning}</AlertDescription>
+        </Alert>
+      ) : null}
       {error ? (
         <Alert variant="destructive" className="mb-4">
           <AlertCircle />

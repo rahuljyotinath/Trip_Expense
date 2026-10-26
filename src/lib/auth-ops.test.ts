@@ -57,3 +57,13 @@ test("logIn rejects wrong password", () => {
     logIn(created.store, { username: "jane", password: "wrongpass" })
   )
 })
+
+test("logIn works with profiles-only store shape", () => {
+  const created = signUp(emptyStore(), { username: "pat", password: "password123" })
+  const profilesOnly = { profiles: created.store.profiles, groups: [] }
+  const session = logIn(profilesOnly, {
+    username: "pat",
+    password: "password123",
+  })
+  assert.equal(session.profile.id, created.profile.id)
+})
