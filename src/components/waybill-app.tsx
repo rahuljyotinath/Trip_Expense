@@ -537,7 +537,7 @@ function AuthGate({
   onSubmit: () => void
 }) {
   const canSubmit =
-    username.trim().length > 0 && password.length >= 8
+    username.trim().length > 0 && password.length >= 5
 
   return (
     <Card className="max-w-xl">
@@ -589,7 +589,7 @@ function AuthGate({
               if (event.key === "Enter" && canSubmit) onSubmit()
             }}
           />
-          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+          <p className="text-xs text-muted-foreground">At least 5 characters.</p>
         </div>
         {mode === "signup" ? (
           <div className="space-y-2">

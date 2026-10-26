@@ -31,7 +31,7 @@ Repo: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expen
 | `GITHUB_TOKEN` | Fine-grained PAT, **Contents: Read and write** on this repo |
 | `GITHUB_REPO` | `rahuljyotinath/Trip_Expense` |
 | `GITHUB_BRANCH` | `ledger` |
-| `SESSION_SECRET` | Random string (sign-in session cookies) |
+| `SESSION_SECRET` | Recommended random string for sign-in cookies; optional if `GITHUB_TOKEN` is set (sessions then derive from the token) |
 
 4. Deploy. If the URL says “Protected by Vercel Authentication”, turn off Deployment Protection for Production (Vercel → Project → Settings → Deployment Protection).
 5. Set `GITHUB_TOKEN` before the first production deploy, or the live site stays browser-only.

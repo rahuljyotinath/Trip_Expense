@@ -17,8 +17,8 @@ export function validateUsername(raw: string) {
 }
 
 function validatePassword(raw: string) {
-  if (raw.length < 8) {
-    throw new Error("Password must be at least 8 characters.")
+  if (raw.length < 5) {
+    throw new Error("Password must be at least 5 characters.")
   }
   return raw
 }
