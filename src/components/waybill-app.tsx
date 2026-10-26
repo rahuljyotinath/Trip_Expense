@@ -55,6 +55,7 @@ import {
   logInUser,
   signUpUser,
   openTrip,
+  syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
 import { todayIsoDate } from "@/lib/ids"
@@ -192,6 +193,7 @@ export function WaybillApp() {
         }
         if (cancelled) return
         setProfile(session)
+        syncProfileToLocalStore(session)
         await refreshGroups(session)
         if (joinFromUrl) {
           setCode(joinFromUrl)

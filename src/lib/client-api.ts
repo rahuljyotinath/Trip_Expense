@@ -25,6 +25,7 @@ import {
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
+import { preparePatchStore, upsertProfileInStore } from "@/lib/store-session"
 
 const PROFILE_KEY = "waybill.profile"
 const LOCAL_STORE_KEY = "waybill.store"
@@ -88,8 +89,14 @@ export function loadSavedProfile(): PublicProfile | null {
   }
 }
 
+export function syncProfileToLocalStore(profile: PublicProfile) {
+  if (typeof window === "undefined") return
+  writeLocalStore(upsertProfileInStore(readLocalStore(), profile))
+}
+
 export function saveProfile(profile: PublicProfile) {
   window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  syncProfileToLocalStore(profile)
 }
 
 export function clearSavedProfile() {
@@ -237,16 +244,6 @@ export async function openTrip(input: {
 
 type GroupPatchResult = { store: Store; group: Group }
 
-function storeWithGroup(store: Store, group: Group): Store {
-  const has = store.groups.some((item) => item.id === group.id)
-  return {
-    ...store,
-    groups: has
-      ? store.groups.map((item) => (item.id === group.id ? group : item))
-      : [group, ...store.groups],
-  }
-}
-
 function runGroupPatchMutator(
   store: Store,
   id: string,
@@ -366,7 +363,7 @@ function runGroupPatchMutator(
 
 /** Apply a PATCH body to the current trip in memory (no network). */
 export function previewGroupPatch(group: Group, body: Record<string, unknown>): Group {
-  const store = storeWithGroup(readLocalStore(), group)
+  const store = preparePatchStore(readLocalStore(), group, loadSavedProfile())
   const result = runGroupPatchMutator(store, group.id, body)
   if (!result) throw new Error("Unknown action.")
   return result.group
@@ -411,7 +408,10 @@ export function commitGroupPatch(
 
 async function patchGroup(id: string, body: Record<string, unknown>) {
   if (mode === "unconfigured") {
-    const store = readLocalStore()
+    const group = readLocalStore().groups.find((item) => item.id === id)
+    const store = group
+      ? preparePatchStore(readLocalStore(), group, loadSavedProfile())
+      : readLocalStore()
     const result = runGroupPatchMutator(store, id, body)
     if (!result) throw new Error("Unknown action.")
     writeLocalStore(result.store)
