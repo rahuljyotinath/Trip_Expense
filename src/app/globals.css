@@ -109,3 +109,112 @@
     font-family: var(--font-heading), ui-serif, Georgia, serif;
   }
 }
+
+@keyframes ledger-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes soft-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@layer utilities {
+  .screen-enter {
+    @apply animate-in fade-in slide-in-from-bottom-3 duration-500 fill-mode-both;
+  }
+
+  .stagger-children > * {
+    @apply animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both;
+  }
+  .stagger-children > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .stagger-children > *:nth-child(2) {
+    animation-delay: 45ms;
+  }
+  .stagger-children > *:nth-child(3) {
+    animation-delay: 90ms;
+  }
+  .stagger-children > *:nth-child(4) {
+    animation-delay: 135ms;
+  }
+  .stagger-children > *:nth-child(5) {
+    animation-delay: 180ms;
+  }
+  .stagger-children > *:nth-child(6) {
+    animation-delay: 225ms;
+  }
+
+  .ledger-loader {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  .ledger-loader span {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 9999px;
+    background: oklch(0.42 0.13 28);
+    animation: ledger-dot 1.1s ease-in-out infinite;
+  }
+  .ledger-loader span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .ledger-loader span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  .interactive-card {
+    @apply rounded-xl bg-card text-left ring-1 ring-foreground/10 shadow-sm transition-[transform,box-shadow,ring-color] duration-200 ease-out;
+  }
+  .interactive-card:hover:not(:disabled) {
+    @apply -translate-y-0.5 shadow-md ring-primary/20;
+  }
+  .interactive-card:active:not(:disabled) {
+    @apply translate-y-0 scale-[0.99] shadow-sm;
+  }
+
+  .interactive-row {
+    @apply transition-[transform,background-color,box-shadow] duration-200 ease-out;
+  }
+  .interactive-row:hover {
+    @apply bg-muted/40 shadow-sm;
+  }
+  .interactive-row:active {
+    @apply scale-[0.995];
+  }
+
+  .hero-glow {
+    background: radial-gradient(
+      120% 80% at 50% -20%,
+      oklch(0.75 0.06 45 / 0.35),
+      transparent 55%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-enter,
+  .stagger-children > *,
+  .ledger-loader span {
+    animation: none !important;
+  }
+  .interactive-card:hover:not(:disabled),
+  .interactive-row:hover {
+    transform: none;
+  }
+}

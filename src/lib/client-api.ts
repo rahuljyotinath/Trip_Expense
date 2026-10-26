@@ -14,6 +14,7 @@ import {
   addMember,
   addPayment,
   claimMember,
+  importTripCsv,
   setMemberCover,
   createGroup,
   deleteExpense,
@@ -339,6 +340,13 @@ function runGroupPatchMutator(
       paymentId: String(body.paymentId ?? ""),
       profileId: String(body.profileId ?? ""),
       restore: Boolean(body.restore),
+    })
+  }
+  if (action === "import-trip-csv") {
+    return importTripCsv(store, {
+      groupId: id,
+      profileId: String(body.profileId ?? ""),
+      csv: String(body.csv ?? ""),
     })
   }
   if (action === "cover-member") {

@@ -8,6 +8,7 @@ import {
   deleteExpense,
   updateExpense,
   updateGroup,
+  importTripCsv,
   setMemberCover,
   voidExpense,
   voidPayment,
@@ -60,6 +61,7 @@ export async function PATCH(
       fromMemberId?: string
       toMemberId?: string
       coveredByMemberId?: string | null
+      csv?: string
       restore?: boolean
     }>(request)
 
@@ -141,6 +143,13 @@ export async function PATCH(
           paymentId: body.paymentId ?? "",
           profileId: body.profileId ?? "",
           restore: body.restore,
+        })
+      }
+      if (body.action === "import-trip-csv") {
+        return importTripCsv(store, {
+          groupId: id,
+          profileId: body.profileId ?? "",
+          csv: body.csv ?? "",
         })
       }
       if (body.action === "cover-member") {

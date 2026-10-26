@@ -1,6 +1,15 @@
 import { joinCode, nowIso, uid } from "@/lib/ids"
 import { sharesComplete } from "@/lib/shares"
-import type { Expense, Group, Payment, Profile, SplitMode, Store } from "@/lib/types"
+import { parseTripCsv } from "@/lib/trip-csv"
+import {
+  normalizeGroup,
+  type Expense,
+  type Group,
+  type Payment,
+  type Profile,
+  type SplitMode,
+  type Store,
+} from "@/lib/types"
 
 function cleanName(raw: string, max: number) {
   const name = raw.replace(/\s+/g, " ").trim()
@@ -456,6 +465,43 @@ function rejectCoveredPaymentSeat(group: Group, memberId: string) {
   throw new Error(
     `${member.name} is covered by ${coverName} — record the payment with ${coverName}.`
   )
+}
+
+export function importTripCsv(
+  store: Store,
+  input: { groupId: string; profileId: string; csv: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (group.createdByProfileId !== input.profileId) {
+    throw new Error("Only the trip opener can import a CSV into this trip.")
+  }
+  requireSeated(group, input.profileId)
+  const parsed = parseTripCsv(input.csv)
+  const currency = parsed.trip.currency ?? group.currency
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw new Error("Currency must be a 3-letter code.")
+  }
+  const startDate =
+    parsed.trip.startDate === undefined ? group.startDate : parsed.trip.startDate
+  const endDate = parsed.trip.endDate === undefined ? group.endDate : parsed.trip.endDate
+  if (startDate && endDate && startDate > endDate) {
+    throw new Error("End date must be on or after the start date.")
+  }
+  const name =
+    parsed.trip.name === undefined ? group.name : cleanName(parsed.trip.name, 60)
+  if (!name) throw new Error("Trip needs a name.")
+
+  const next: Group = {
+    ...group,
+    name,
+    currency,
+    startDate,
+    endDate,
+    members: parsed.members,
+    expenses: parsed.expenses,
+    payments: parsed.payments,
+  }
+  return { store: replaceGroup(store, normalizeGroup(next)), group: normalizeGroup(next) }
 }
 
 export function setMemberCover(

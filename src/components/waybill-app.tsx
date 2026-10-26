@@ -1,13 +1,18 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import {
   AlertCircle,
   ArrowRight,
   Banknote,
   Check,
+  Compass,
+  Download,
   Link2,
+  Sparkles,
+  Upload,
+  Users,
   Pencil,
   Plus,
   Receipt,
@@ -58,6 +63,7 @@ import { suggestedMember } from "@/lib/operations"
 import { settlementBalances, simplifyDebts } from "@/lib/settle"
 import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
+import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
 import type { Expense, Group, PublicProfile } from "@/lib/types"
 
 type Screen = "boot" | "auth" | "home" | "create" | "join" | "trip"
@@ -354,7 +360,7 @@ export function WaybillApp() {
   if (screen === "boot") {
     return (
       <Shell health={health} profile={profile}>
-        <p className="text-muted-foreground">Opening the ledger…</p>
+        <BootLoader />
       </Shell>
     )
   }
@@ -375,13 +381,14 @@ export function WaybillApp() {
       }
     >
       {error ? (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive" className="mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
           <AlertCircle />
           <AlertTitle>Hold on</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
 
+      <div key={screen} className="screen-enter">
       {screen === "auth" ? (
         <AuthGate
           mode={authMode}
@@ -476,7 +483,27 @@ export function WaybillApp() {
           onBusy={setBusy}
         />
       ) : null}
+      </div>
     </Shell>
+  )
+}
+
+function BootLoader() {
+  return (
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
+      <div className="relative flex size-16 items-center justify-center rounded-2xl bg-card shadow-md ring-1 ring-foreground/10">
+        <Sparkles className="size-7 text-primary motion-safe:animate-pulse" />
+      </div>
+      <div>
+        <p className="font-heading text-xl">Opening the ledger</p>
+        <p className="mt-1 text-sm text-muted-foreground">Syncing your trips…</p>
+      </div>
+      <div className="ledger-loader" aria-hidden>
+        <span />
+        <span />
+        <span />
+      </div>
+    </div>
   )
 }
 
@@ -494,12 +521,13 @@ function Shell({
   onLogout?: () => void
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10">
-      <header className="mb-8 flex items-start justify-between gap-4">
+    <div className="relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-48 hero-glow" aria-hidden />
+      <header className="relative mb-8 flex items-start justify-between gap-4">
         <button
           type="button"
           onClick={onHome}
-          className="text-left"
+          className="rounded-lg text-left transition-opacity hover:opacity-90 disabled:cursor-default"
           disabled={!onHome}
         >
           <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
@@ -660,9 +688,11 @@ function Home({
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button size="lg" onClick={onCreate}>
+          <Compass className="size-4" />
           Open a trip
         </Button>
         <Button size="lg" variant="outline" onClick={onJoin}>
+          <Link2 className="size-4" />
           Join with a link
         </Button>
       </div>
@@ -670,17 +700,20 @@ function Home({
       {groups.length === 0 ? (
         <EmptyTrips />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="stagger-children grid gap-3 sm:grid-cols-2">
           {groups.map((item) => (
             <button
               key={item.id}
               type="button"
               disabled={busy}
               onClick={() => onOpen(item.id)}
-              className="rounded-xl bg-card p-4 text-left ring-1 ring-foreground/10 transition hover:ring-foreground/30"
+              className="interactive-card group p-4"
             >
-              <p className="font-heading text-2xl">{item.name}</p>
-              <p className="mt-3 text-sm text-muted-foreground">
+              <p className="font-heading text-2xl transition-colors group-hover:text-primary">
+                {item.name}
+              </p>
+              <p className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Users className="size-3.5 opacity-70" />
                 {item.members.length} people · {item.expenses.length} spends
               </p>
             </button>
@@ -1091,6 +1124,8 @@ function TripDesk({
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
+  const [importCsvText, setImportCsvText] = useState<string | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
   const shareUrl =
     typeof window === "undefined" ? "" : `${window.location.origin}/?join=${group.code}`
 
@@ -1145,6 +1180,40 @@ function TripDesk({
             {copied ? <Check /> : <Link2 />}
             {copied ? "Link copied" : "Copy invite link"}
           </Button>
+          <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
+            <Download /> Export CSV
+          </Button>
+          {isOpener ? (
+            <>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ""
+                  if (!file) return
+                  try {
+                    const text = await file.text()
+                    parseTripCsv(text)
+                    setImportCsvText(text)
+                  } catch (error) {
+                    onError(
+                      error instanceof Error ? error.message : "Could not read that CSV."
+                    )
+                  }
+                }}
+              />
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => importInputRef.current?.click()}
+              >
+                <Upload /> Import CSV
+              </Button>
+            </>
+          ) : null}
           <Button
             variant="outline"
             onClick={() => onPaymentOpen(true)}
@@ -1153,6 +1222,7 @@ function TripDesk({
             <Banknote /> Paid back
           </Button>
           <Button
+            size="lg"
             onClick={() => {
               setEditingExpense(null)
               onExpenseOpen(true)
@@ -1185,8 +1255,12 @@ function TripDesk({
               </CardHeader>
             </Card>
           ) : (
-            transfers.map((transfer) => (
-              <Card key={`${transfer.fromMemberId}-${transfer.toMemberId}`}>
+            transfers.map((transfer, index) => (
+              <Card
+                key={`${transfer.fromMemberId}-${transfer.toMemberId}`}
+                className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                style={{ animationDelay: `${index * 60}ms` }}
+              >
                 <CardContent className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
                   <p>
                     <span className="font-medium">
@@ -1287,7 +1361,7 @@ function TripDesk({
               return (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="interactive-row flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
                 >
                   <span>
                     {member.name}
@@ -1331,7 +1405,11 @@ function TripDesk({
                       .map((id) => memberName(group, id))
                       .join(", ")
                     return (
-                      <Card key={expense.id} size="sm" className="flex flex-col">
+                      <Card
+                        key={expense.id}
+                        size="sm"
+                        className="flex flex-col motion-safe:active:scale-[0.99]"
+                      >
                         <CardContent className="flex flex-1 flex-col gap-2 pt-1">
                           <p className="font-heading text-2xl leading-none tabular-nums sm:text-3xl">
                             {formatMoney(expense.amount, group.currency)}
@@ -1480,6 +1558,50 @@ function TripDesk({
         onError={onError}
         onBusy={onBusy}
       />
+      <Dialog
+        open={Boolean(importCsvText)}
+        onOpenChange={(open) => {
+          if (!open) setImportCsvText(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import trip CSV?</DialogTitle>
+            <DialogDescription>
+              This replaces everyone on the roster, every spend, and every paid-back
+              entry on this trip. Trip code and invite link stay the same.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportCsvText(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy || !importCsvText}
+              onClick={() => {
+                if (!importCsvText) return
+                const csv = importCsvText
+                applyGroupPatchOptimistic({
+                  group,
+                  body: {
+                    action: "import-trip-csv",
+                    csv,
+                    profileId: profile.id,
+                  },
+                  onGroup,
+                  onError,
+                  onBusy,
+                  onDone: () => setImportCsvText(null),
+                  refresh: onRefresh,
+                })
+              }}
+            >
+              Replace from CSV
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(deleteExpenseTarget)}
         onOpenChange={(open) => {

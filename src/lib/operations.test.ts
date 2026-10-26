@@ -6,10 +6,12 @@ import {
   createGroup,
   createProfile,
   deleteExpense,
+  importTripCsv,
   setMemberCover,
   updateExpense,
   updateGroup,
 } from "./operations"
+import { exportTripCsv } from "./trip-csv"
 import { emptyStore, type Group } from "./types"
 
 function baseStore() {
@@ -162,6 +164,40 @@ test("deleteExpense removes row", () => {
     profileId: profile.id,
   })
   assert.equal(after.expenses.length, 0)
+})
+
+test("importTripCsv replaces ledger for opener", () => {
+  const { store, profile } = baseStore()
+  const { store: s1, group } = seatedTrip(store, profile.id)
+  const csv = exportTripCsv({
+    ...group,
+    members: [
+      ...group.members,
+      { id: "m3", name: "Kid", profileId: null, coveredByMemberId: null },
+    ],
+    expenses: [],
+    payments: [],
+  })
+  const { group: next } = importTripCsv(s1, {
+    groupId: group.id,
+    profileId: profile.id,
+    csv,
+  })
+  assert.equal(next.members.length, 3)
+  assert.equal(next.members.some((item) => item.name === "Kid"), true)
+})
+
+test("importTripCsv rejects non-opener", () => {
+  const { store, profile } = baseStore()
+  const { store: s1, group } = seatedTrip(store, profile.id)
+  const csv = exportTripCsv(group)
+  assert.throws(() =>
+    importTripCsv(s1, {
+      groupId: group.id,
+      profileId: "other",
+      csv,
+    })
+  )
 })
 
 test("setMemberCover requires claimed seat", () => {
