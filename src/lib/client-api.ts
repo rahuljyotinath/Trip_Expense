@@ -233,92 +233,165 @@ export async function openTrip(input: {
   return data.group
 }
 
+type GroupPatchResult = { store: Store; group: Group }
+
+function storeWithGroup(store: Store, group: Group): Store {
+  const has = store.groups.some((item) => item.id === group.id)
+  return {
+    ...store,
+    groups: has
+      ? store.groups.map((item) => (item.id === group.id ? group : item))
+      : [group, ...store.groups],
+  }
+}
+
+function runGroupPatchMutator(
+  store: Store,
+  id: string,
+  body: Record<string, unknown>
+): GroupPatchResult | null {
+  const action = body.action
+  if (action === "claim") {
+    return claimMember(store, {
+      groupId: id,
+      memberId: String(body.memberId ?? ""),
+      profileId: String(body.profileId ?? ""),
+    })
+  }
+  if (action === "add-member") {
+    return addMember(store, id, String(body.name ?? ""))
+  }
+  if (action === "update-group") {
+    return updateGroup(store, {
+      groupId: id,
+      profileId: String(body.profileId ?? ""),
+      name: body.name !== undefined ? String(body.name) : undefined,
+      startDate:
+        body.startDate === undefined
+          ? undefined
+          : body.startDate === null
+            ? null
+            : String(body.startDate),
+      endDate:
+        body.endDate === undefined
+          ? undefined
+          : body.endDate === null
+            ? null
+            : String(body.endDate),
+    })
+  }
+  if (action === "add-expense") {
+    return addExpense(store, {
+      groupId: id,
+      date: String(body.date ?? ""),
+      amount: Number(body.amount),
+      reason: String(body.reason ?? ""),
+      paidByMemberId: String(body.paidByMemberId ?? ""),
+      participantIds: (body.participantIds as string[]) ?? [],
+      split: body.split as SplitMode | undefined,
+      shares: (body.shares as Record<string, number>) ?? {},
+      createdByProfileId: String(body.profileId ?? ""),
+    })
+  }
+  if (action === "delete-expense") {
+    return deleteExpense(store, {
+      groupId: id,
+      expenseId: String(body.expenseId ?? ""),
+      profileId: String(body.profileId ?? ""),
+    })
+  }
+  if (action === "update-expense") {
+    return updateExpense(store, {
+      groupId: id,
+      expenseId: String(body.expenseId ?? ""),
+      profileId: String(body.profileId ?? ""),
+      date: String(body.date ?? ""),
+      amount: Number(body.amount),
+      reason: String(body.reason ?? ""),
+      paidByMemberId: String(body.paidByMemberId ?? ""),
+      participantIds: (body.participantIds as string[]) ?? [],
+      split: body.split as SplitMode | undefined,
+      shares: (body.shares as Record<string, number>) ?? {},
+    })
+  }
+  if (action === "void-expense") {
+    return voidExpense(store, {
+      groupId: id,
+      expenseId: String(body.expenseId ?? ""),
+      profileId: String(body.profileId ?? ""),
+      restore: Boolean(body.restore),
+    })
+  }
+  if (action === "add-payment") {
+    return addPayment(store, {
+      groupId: id,
+      date: String(body.date ?? ""),
+      amount: Number(body.amount),
+      fromMemberId: String(body.fromMemberId ?? ""),
+      toMemberId: String(body.toMemberId ?? ""),
+      createdByProfileId: String(body.profileId ?? ""),
+    })
+  }
+  if (action === "void-payment") {
+    return voidPayment(store, {
+      groupId: id,
+      paymentId: String(body.paymentId ?? ""),
+      profileId: String(body.profileId ?? ""),
+      restore: Boolean(body.restore),
+    })
+  }
+  return null
+}
+
+/** Apply a PATCH body to the current trip in memory (no network). */
+export function previewGroupPatch(group: Group, body: Record<string, unknown>): Group {
+  const store = storeWithGroup(readLocalStore(), group)
+  const result = runGroupPatchMutator(store, group.id, body)
+  if (!result) throw new Error("Unknown action.")
+  return result.group
+}
+
+/** Update UI immediately, persist in the background, reconcile or rollback on failure. */
+export function commitGroupPatch(
+  group: Group,
+  body: Record<string, unknown>,
+  handlers: {
+    onApplied: (next: Group) => void
+    onError: (message: string) => void
+    onReconciled?: (next: Group) => void
+    fetchLatest?: () => Promise<Group>
+  }
+): void {
+  let preview: Group
+  try {
+    preview = previewGroupPatch(group, body)
+  } catch (error) {
+    handlers.onError(error instanceof Error ? error.message : "Update failed.")
+    return
+  }
+  handlers.onApplied(preview)
+
+  void (async () => {
+    try {
+      const server = await patchGroup(group.id, body)
+      handlers.onReconciled?.(server)
+    } catch (error) {
+      handlers.onError(error instanceof Error ? error.message : "Could not save.")
+      if (handlers.fetchLatest) {
+        try {
+          handlers.onReconciled?.(await handlers.fetchLatest())
+        } catch {
+          /* keep last applied state */
+        }
+      }
+    }
+  })()
+}
+
 async function patchGroup(id: string, body: Record<string, unknown>) {
   if (mode === "unconfigured") {
     const store = readLocalStore()
-    const action = body.action
-    const result =
-      action === "claim"
-        ? claimMember(store, {
-            groupId: id,
-            memberId: String(body.memberId ?? ""),
-            profileId: String(body.profileId ?? ""),
-          })
-        : action === "add-member"
-          ? addMember(store, id, String(body.name ?? ""))
-          : action === "update-group"
-            ? updateGroup(store, {
-                groupId: id,
-                profileId: String(body.profileId ?? ""),
-                name: body.name !== undefined ? String(body.name) : undefined,
-                startDate:
-                  body.startDate === undefined
-                    ? undefined
-                    : body.startDate === null
-                      ? null
-                      : String(body.startDate),
-                endDate:
-                  body.endDate === undefined
-                    ? undefined
-                    : body.endDate === null
-                      ? null
-                      : String(body.endDate),
-              })
-            : action === "add-expense"
-            ? addExpense(store, {
-                groupId: id,
-                date: String(body.date ?? ""),
-                amount: Number(body.amount),
-                reason: String(body.reason ?? ""),
-                paidByMemberId: String(body.paidByMemberId ?? ""),
-                participantIds: (body.participantIds as string[]) ?? [],
-                split: body.split as SplitMode | undefined,
-                shares: (body.shares as Record<string, number>) ?? {},
-                createdByProfileId: String(body.profileId ?? ""),
-              })
-            : action === "delete-expense"
-              ? deleteExpense(store, {
-                  groupId: id,
-                  expenseId: String(body.expenseId ?? ""),
-                  profileId: String(body.profileId ?? ""),
-                })
-              : action === "update-expense"
-                ? updateExpense(store, {
-                    groupId: id,
-                    expenseId: String(body.expenseId ?? ""),
-                    profileId: String(body.profileId ?? ""),
-                    date: String(body.date ?? ""),
-                    amount: Number(body.amount),
-                    reason: String(body.reason ?? ""),
-                    paidByMemberId: String(body.paidByMemberId ?? ""),
-                    participantIds: (body.participantIds as string[]) ?? [],
-                    split: body.split as SplitMode | undefined,
-                    shares: (body.shares as Record<string, number>) ?? {},
-                  })
-                : action === "void-expense"
-                  ? voidExpense(store, {
-                      groupId: id,
-                      expenseId: String(body.expenseId ?? ""),
-                      profileId: String(body.profileId ?? ""),
-                      restore: Boolean(body.restore),
-                    })
-                  : action === "add-payment"
-                ? addPayment(store, {
-                    groupId: id,
-                    date: String(body.date ?? ""),
-                    amount: Number(body.amount),
-                    fromMemberId: String(body.fromMemberId ?? ""),
-                    toMemberId: String(body.toMemberId ?? ""),
-                    createdByProfileId: String(body.profileId ?? ""),
-                  })
-                : action === "void-payment"
-                  ? voidPayment(store, {
-                      groupId: id,
-                      paymentId: String(body.paymentId ?? ""),
-                      profileId: String(body.profileId ?? ""),
-                      restore: Boolean(body.restore),
-                    })
-                  : null
+    const result = runGroupPatchMutator(store, id, body)
     if (!result) throw new Error("Unknown action.")
     writeLocalStore(result.store)
     return result.group

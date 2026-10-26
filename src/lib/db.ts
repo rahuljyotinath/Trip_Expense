@@ -166,7 +166,7 @@ async function writeGithub(store: Store, sha?: string) {
     message: sha
       ? "Trip Expenses Balancer: update trip ledger"
       : "Trip Expenses Balancer: create trip ledger",
-    content: Buffer.from(`${JSON.stringify(store, null, 2)}\n`).toString("base64"),
+    content: Buffer.from(`${JSON.stringify(store)}\n`).toString("base64"),
     branch: config.branch,
     ...(sha ? { sha } : {}),
   })
@@ -185,7 +185,7 @@ async function save(store: Store, sha?: string) {
 }
 
 export async function readStore() {
-  return enqueue(async () => (await load()).store)
+  return (await load()).store
 }
 
 export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) {

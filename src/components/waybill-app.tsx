@@ -40,22 +40,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
+  commitGroupPatch,
   fetchGroup,
   fetchGroupByCode,
   fetchMyGroups,
-  inviteName,
   loadHealth,
   logoutUser,
-  crossPayment,
   fetchSessionProfile,
   logInUser,
   signUpUser,
   openTrip,
-  patchExpense,
-  recordPayment,
-  removeExpense,
-  saveExpense,
-  updateTripDetails,
   type Health,
 } from "@/lib/client-api"
 import { todayIsoDate } from "@/lib/ids"
@@ -110,6 +104,36 @@ function formatTripDates(group: Group) {
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
+}
+
+function applyGroupPatchOptimistic(input: {
+  group: Group
+  body: Record<string, unknown>
+  onGroup: (next: Group) => void
+  onError: (message: string | null) => void
+  onBusy: (busy: boolean) => void
+  onDone?: () => void
+  refresh?: () => Promise<void>
+}) {
+  const { group, body, onGroup, onError, onBusy, onDone, refresh } = input
+  onBusy(true)
+  onError(null)
+  commitGroupPatch(group, body, {
+    onApplied: (next) => {
+      onGroup(next)
+      onBusy(false)
+      onDone?.()
+    },
+    onError: (message) => {
+      onError(message)
+      onBusy(false)
+    },
+    onReconciled: (next) => {
+      onGroup(next)
+      void refresh?.()
+    },
+    fetchLatest: () => fetchGroup(group.id),
+  })
 }
 
 export function WaybillApp() {
@@ -1169,24 +1193,22 @@ function TripDesk({
                       <Button
                         size="sm"
                         disabled={busy}
-                        onClick={async () => {
-                          onBusy(true)
-                          onError(null)
-                          try {
-                            onGroup(
-                              await recordPayment(group.id, {
-                                date: todayIsoDate(),
-                                amount: transfer.amount,
-                                fromMemberId: transfer.fromMemberId,
-                                toMemberId: transfer.toMemberId,
-                                profileId: profile.id,
-                              })
-                            )
-                          } catch (err) {
-                            onError(errorText(err))
-                          } finally {
-                            onBusy(false)
-                          }
+                        onClick={() => {
+                          applyGroupPatchOptimistic({
+                            group,
+                            body: {
+                              action: "add-payment",
+                              date: todayIsoDate(),
+                              amount: transfer.amount,
+                              fromMemberId: transfer.fromMemberId,
+                              toMemberId: transfer.toMemberId,
+                              profileId: profile.id,
+                            },
+                            onGroup,
+                            onError,
+                            onBusy,
+                            refresh: onRefresh,
+                          })
                         }}
                       >
                         Mark paid
@@ -1223,23 +1245,20 @@ function TripDesk({
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        onClick={async () => {
-                          onBusy(true)
-                          onError(null)
-                          try {
-                            onGroup(
-                              await crossPayment(
-                                group.id,
-                                payment.id,
-                                profile.id,
-                                crossed
-                              )
-                            )
-                          } catch (err) {
-                            onError(errorText(err))
-                          } finally {
-                            onBusy(false)
-                          }
+                        onClick={() => {
+                          applyGroupPatchOptimistic({
+                            group,
+                            body: {
+                              action: "void-payment",
+                              paymentId: payment.id,
+                              profileId: profile.id,
+                              restore: crossed,
+                            },
+                            onGroup,
+                            onError,
+                            onBusy,
+                            refresh: onRefresh,
+                          })
                         }}
                       >
                         {crossed ? "Count again" : "Cross out"}
@@ -1398,25 +1417,22 @@ function TripDesk({
             <Button
               variant="destructive"
               disabled={busy || !deleteExpenseTarget}
-              onClick={async () => {
+              onClick={() => {
                 if (!deleteExpenseTarget) return
-                onBusy(true)
-                onError(null)
-                try {
-                  onGroup(
-                    await removeExpense(
-                      group.id,
-                      deleteExpenseTarget.id,
-                      profile.id
-                    )
-                  )
-                  setDeleteExpenseTarget(null)
-                  await onRefresh()
-                } catch (err) {
-                  onError(errorText(err))
-                } finally {
-                  onBusy(false)
-                }
+                const expenseId = deleteExpenseTarget.id
+                applyGroupPatchOptimistic({
+                  group,
+                  body: {
+                    action: "delete-expense",
+                    expenseId,
+                    profileId: profile.id,
+                  },
+                  onGroup,
+                  onError,
+                  onBusy,
+                  onDone: () => setDeleteExpenseTarget(null),
+                  refresh: onRefresh,
+                })
               }}
             >
               Remove
@@ -1434,12 +1450,12 @@ function TripDesk({
           onExpenseOpen(open)
           if (!open) setEditingExpense(null)
         }}
-        onSaved={async (next) => {
-          onGroup(next)
+        onSaved={() => {
           onExpenseOpen(false)
           setEditingExpense(null)
-          await onRefresh()
         }}
+        onGroup={onGroup}
+        onRefresh={onRefresh}
         onError={onError}
         onBusy={onBusy}
       />
@@ -1452,6 +1468,7 @@ function TripDesk({
           onGroup(next)
           onMemberOpen(false)
         }}
+        onRefresh={onRefresh}
         onError={onError}
         onBusy={onBusy}
       />
@@ -1465,6 +1482,7 @@ function TripDesk({
           onGroup(next)
           onPaymentOpen(false)
         }}
+        onRefresh={onRefresh}
         onError={onError}
         onBusy={onBusy}
       />
@@ -1566,23 +1584,20 @@ function TripEditForm({
         <DialogFooter>
           <Button
             disabled={busy}
-            onClick={async () => {
-              onBusy(true)
-              onError(null)
-              try {
-                onSaved(
-                  await updateTripDetails(group.id, {
-                    profileId: profile.id,
-                    name: name.trim(),
-                    startDate: startDate.trim() || null,
-                    endDate: endDate.trim() || null,
-                  })
-                )
-              } catch (err) {
-                onError(errorText(err))
-              } finally {
-                onBusy(false)
-              }
+            onClick={() => {
+              applyGroupPatchOptimistic({
+                group,
+                body: {
+                  action: "update-group",
+                  profileId: profile.id,
+                  name: name.trim(),
+                  startDate: startDate.trim() || null,
+                  endDate: endDate.trim() || null,
+                },
+                onGroup: onSaved,
+                onError,
+                onBusy,
+              })
             }}
           >
             Save
@@ -1600,6 +1615,8 @@ function ExpenseDialog({
   busy,
   onOpen,
   onSaved,
+  onGroup,
+  onRefresh,
   onError,
   onBusy,
 }: {
@@ -1609,7 +1626,9 @@ function ExpenseDialog({
   profile: PublicProfile
   busy: boolean
   onOpen: (open: boolean) => void
-  onSaved: (group: Group) => Promise<void> | void
+  onSaved: () => void
+  onGroup: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -1623,6 +1642,8 @@ function ExpenseDialog({
           profile={profile}
           busy={busy}
           onSaved={onSaved}
+          onGroup={onGroup}
+          onRefresh={onRefresh}
           onError={onError}
           onBusy={onBusy}
         />
@@ -1637,6 +1658,8 @@ function ExpenseForm({
   expense,
   busy,
   onSaved,
+  onGroup,
+  onRefresh,
   onError,
   onBusy,
 }: {
@@ -1644,7 +1667,9 @@ function ExpenseForm({
   profile: PublicProfile
   expense: Expense | null
   busy: boolean
-  onSaved: (group: Group) => Promise<void> | void
+  onSaved: () => void
+  onGroup: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -1755,38 +1780,38 @@ function ExpenseForm({
         <DialogFooter>
           <Button
             disabled={busy}
-            onClick={async () => {
+            onClick={() => {
               const parsed = parseAmount(amount)
               if (!parsed) {
                 onError("Amount has to be a real number.")
                 return
               }
-              onBusy(true)
-              onError(null)
-              try {
-                const payload = {
-                  date,
-                  amount: parsed,
-                  reason,
-                  paidByMemberId: paidBy,
-                  participantIds: participants,
-                  split: "equal" as const,
-                  shares: {} as Record<string, number>,
-                  profileId: profile.id,
-                }
-                const next =
+              const payload = {
+                date,
+                amount: parsed,
+                reason,
+                paidByMemberId: paidBy,
+                participantIds: participants,
+                split: "equal" as const,
+                shares: {} as Record<string, number>,
+                profileId: profile.id,
+              }
+              applyGroupPatchOptimistic({
+                group,
+                body:
                   isEdit && expense
-                    ? await patchExpense(group.id, {
+                    ? {
+                        action: "update-expense",
                         ...payload,
                         expenseId: expense.id,
-                      })
-                    : await saveExpense(group.id, payload)
-                await onSaved(next)
-              } catch (err) {
-                onError(errorText(err))
-              } finally {
-                onBusy(false)
-              }
+                      }
+                    : { action: "add-expense", ...payload },
+                onGroup,
+                onError,
+                onBusy,
+                onDone: onSaved,
+                refresh: onRefresh,
+              })
             }}
           >
             {isEdit ? "Save changes" : "Save spend"}
@@ -1802,6 +1827,7 @@ function MemberDialog({
   busy,
   onOpen,
   onSaved,
+  onRefresh,
   onError,
   onBusy,
 }: {
@@ -1810,6 +1836,7 @@ function MemberDialog({
   busy: boolean
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -1820,6 +1847,7 @@ function MemberDialog({
           group={group}
           busy={busy}
           onSaved={onSaved}
+          onRefresh={onRefresh}
           onError={onError}
           onBusy={onBusy}
         />
@@ -1832,12 +1860,14 @@ function MemberForm({
   group,
   busy,
   onSaved,
+  onRefresh,
   onError,
   onBusy,
 }: {
   group: Group
   busy: boolean
   onSaved: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -1863,16 +1893,15 @@ function MemberForm({
         <DialogFooter>
           <Button
             disabled={busy || !name.trim()}
-            onClick={async () => {
-              onBusy(true)
-              onError(null)
-              try {
-                onSaved(await inviteName(group.id, name))
-              } catch (err) {
-                onError(errorText(err))
-              } finally {
-                onBusy(false)
-              }
+            onClick={() => {
+              applyGroupPatchOptimistic({
+                group,
+                body: { action: "add-member", name },
+                onGroup: onSaved,
+                onError,
+                onBusy,
+                refresh: onRefresh,
+              })
             }}
           >
             Add seat
@@ -1889,6 +1918,7 @@ function PaymentDialog({
   busy,
   onOpen,
   onSaved,
+  onRefresh,
   onError,
   onBusy,
 }: {
@@ -1898,6 +1928,7 @@ function PaymentDialog({
   busy: boolean
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -1909,6 +1940,7 @@ function PaymentDialog({
           profile={profile}
           busy={busy}
           onSaved={onSaved}
+          onRefresh={onRefresh}
           onError={onError}
           onBusy={onBusy}
         />
@@ -1922,6 +1954,7 @@ function PaymentForm({
   profile,
   busy,
   onSaved,
+  onRefresh,
   onError,
   onBusy,
 }: {
@@ -1929,6 +1962,7 @@ function PaymentForm({
   profile: PublicProfile
   busy: boolean
   onSaved: (group: Group) => void
+  onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
@@ -2010,23 +2044,21 @@ function PaymentForm({
               onError("Amount has to be a real number.")
               return
             }
-            onBusy(true)
-            onError(null)
-            try {
-              onSaved(
-                await recordPayment(group.id, {
-                  date,
-                  amount: parsed,
-                  fromMemberId: fromId,
-                  toMemberId: toId,
-                  profileId: profile.id,
-                })
-              )
-            } catch (err) {
-              onError(errorText(err))
-            } finally {
-              onBusy(false)
-            }
+            applyGroupPatchOptimistic({
+              group,
+              body: {
+                action: "add-payment",
+                date,
+                amount: parsed,
+                fromMemberId: fromId,
+                toMemberId: toId,
+                profileId: profile.id,
+              },
+              onGroup: onSaved,
+              onError,
+              onBusy,
+              refresh: onRefresh,
+            })
           }}
         >
           Save payment
