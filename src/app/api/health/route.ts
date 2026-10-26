@@ -5,8 +5,10 @@ import {
   storageMode,
 } from "@/lib/db"
 import { json } from "@/lib/http"
+import { connection } from "next/server"
 
 export async function GET() {
+  await connection()
   const mode = storageMode()
   if (mode === "postgres") {
     const postgres = await probePostgres()
