@@ -44,6 +44,7 @@ export type Health = {
   connected: boolean
   error?: string | null
   ledgerVersion?: number | null
+  sessionReady?: boolean
 }
 
 const HEALTH_CACHE_MS = 45_000

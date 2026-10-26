@@ -44,13 +44,17 @@ export function LoginPage() {
   }, [])
 
   const storageBlocked =
-    health?.mode === "unconfigured" || (health !== null && !health.connected)
+    health?.mode === "unconfigured" ||
+    (health !== null && !health.connected) ||
+    health?.sessionReady === false
   const storageWarning =
-    health?.mode === "unconfigured"
-      ? health.warning ?? "This deploy has no database configured."
-      : health && !health.connected
-        ? health.error ?? "Cannot reach the trip ledger."
-        : null
+    health?.sessionReady === false
+      ? "Sign-in is not configured on this deploy (session secret)."
+      : health?.mode === "unconfigured"
+        ? health.warning ?? "This deploy has no database configured."
+        : health && !health.connected
+          ? health.error ?? "Cannot reach the trip ledger."
+          : null
 
   const canSubmit =
     username.trim().length > 0 && password.length >= 5 && !storageBlocked

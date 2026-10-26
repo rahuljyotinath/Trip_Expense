@@ -12,13 +12,36 @@ const SCRYPT_R = 8
 const SCRYPT_P = 1
 const KEY_LEN = 64
 
-function secret() {
+function postgresUrlForSessionDerive() {
+  return (
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.DATABASE_URL?.trim() ||
+    process.env.POSTGRES_PRISMA_URL?.trim() ||
+    process.env.POSTGRES_URL_NON_POOLING?.trim() ||
+    ""
+  )
+}
+
+function sessionSecretFromPostgresUrl(url: string) {
+  return createHmac("sha256", "teb-session-v1").update(url).digest("hex")
+}
+
+/** Resolves cookie signing secret; throws if production cannot sign sessions. */
+export function resolveSessionSecret(): string {
   const explicit = process.env.SESSION_SECRET?.trim()
   if (explicit) return explicit
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("Set SESSION_SECRET for sign-in sessions.")
+  if (process.env.VERCEL) {
+    const postgresUrl = postgresUrlForSessionDerive()
+    if (postgresUrl) return sessionSecretFromPostgresUrl(postgresUrl)
   }
-  return "dev-only-session-secret"
+  if (process.env.NODE_ENV !== "production") {
+    return "dev-only-session-secret"
+  }
+  throw new Error("Set SESSION_SECRET for sign-in sessions.")
+}
+
+function secret() {
+  return resolveSessionSecret()
 }
 
 export function hashPassword(password: string) {

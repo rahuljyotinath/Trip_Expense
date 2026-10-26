@@ -32,8 +32,8 @@ POSTGRES_URL=... npm run db:import
 # or: POSTGRES_URL=... npx tsx scripts/import-ledger-to-postgres.ts data/backups/github-store-20261027.json
 ```
 
-5. Set `SESSION_SECRET` for sign-in cookies.
-6. Deploy. `/api/health` should report `mode: "postgres"` and `connected: true`.
+5. Set `SESSION_SECRET` for sign-in cookies (recommended). On Vercel with `POSTGRES_URL`, the app can derive a session key if `SESSION_SECRET` is unset.
+6. Deploy. `/api/health` should report `mode: "postgres"`, `connected: true`, and `sessionReady: true`.
 
 Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
 

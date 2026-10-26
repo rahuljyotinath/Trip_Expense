@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { createSessionToken, readSessionToken } from "./auth-crypto"
+import { createSessionToken, readSessionToken, resolveSessionSecret } from "./auth-crypto"
 
 const env = process.env as Record<string, string | undefined>
 
@@ -13,29 +13,64 @@ test("session token uses SESSION_SECRET when set", () => {
   const saved = {
     NODE_ENV: process.env.NODE_ENV,
     SESSION_SECRET: process.env.SESSION_SECRET,
+    VERCEL: process.env.VERCEL,
+    POSTGRES_URL: process.env.POSTGRES_URL,
   }
   env.NODE_ENV = "production"
   env.SESSION_SECRET = "test-session-secret"
+  delete env.VERCEL
+  delete env.POSTGRES_URL
   try {
     const token = createSessionToken("p_test")
     assert.equal(readSessionToken(token), "p_test")
+    assert.equal(resolveSessionSecret(), "test-session-secret")
   } finally {
     restore("NODE_ENV", saved.NODE_ENV)
     restore("SESSION_SECRET", saved.SESSION_SECRET)
+    restore("VERCEL", saved.VERCEL)
+    restore("POSTGRES_URL", saved.POSTGRES_URL)
   }
 })
 
-test("production requires SESSION_SECRET", () => {
+test("production on Vercel derives secret from POSTGRES_URL when SESSION_SECRET unset", () => {
   const saved = {
     NODE_ENV: process.env.NODE_ENV,
     SESSION_SECRET: process.env.SESSION_SECRET,
+    VERCEL: process.env.VERCEL,
+    POSTGRES_URL: process.env.POSTGRES_URL,
   }
   env.NODE_ENV = "production"
   delete env.SESSION_SECRET
+  env.VERCEL = "1"
+  env.POSTGRES_URL = "postgres://example/db"
+  try {
+    const token = createSessionToken("p_vercel")
+    assert.equal(readSessionToken(token), "p_vercel")
+  } finally {
+    restore("NODE_ENV", saved.NODE_ENV)
+    restore("SESSION_SECRET", saved.SESSION_SECRET)
+    restore("VERCEL", saved.VERCEL)
+    restore("POSTGRES_URL", saved.POSTGRES_URL)
+  }
+})
+
+test("production requires SESSION_SECRET when not on Vercel and no postgres", () => {
+  const saved = {
+    NODE_ENV: process.env.NODE_ENV,
+    SESSION_SECRET: process.env.SESSION_SECRET,
+    VERCEL: process.env.VERCEL,
+    POSTGRES_URL: process.env.POSTGRES_URL,
+  }
+  env.NODE_ENV = "production"
+  delete env.SESSION_SECRET
+  delete env.VERCEL
+  delete env.POSTGRES_URL
   try {
     assert.throws(() => createSessionToken("p_test"), /SESSION_SECRET/)
   } finally {
     restore("NODE_ENV", saved.NODE_ENV)
     restore("SESSION_SECRET", saved.SESSION_SECRET)
+    restore("VERCEL", saved.VERCEL)
+    restore("POSTGRES_URL", saved.POSTGRES_URL)
   }
 })
