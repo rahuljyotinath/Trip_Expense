@@ -39,6 +39,8 @@ const LOCAL_STORE_KEY = "waybill.store"
 export type Health = {
   mode: StorageMode
   warning: string | null
+  /** Transient reachability failure (not a storage config issue). */
+  notice?: string | null
   repo: string | null
   connected: boolean
   githubUrl: string | null
@@ -47,7 +49,11 @@ export type Health = {
   error?: string | null
 }
 
+const HEALTH_CACHE_MS = 45_000
+
 let mode: StorageMode = "local"
+let healthCache: { health: Health; at: number } | null = null
+let healthInFlight: Promise<Health> | null = null
 
 function readLocalStore(): Store {
   if (typeof window === "undefined") return emptyStore()
@@ -217,22 +223,70 @@ export async function logoutUser() {
   }
 }
 
-export async function loadHealth(): Promise<Health> {
-  try {
-    const health = await request<Health>("/api/health")
-    mode = health.mode
-    return health
-  } catch {
-    mode = "unconfigured"
+function healthReachabilityNotice(): Health {
+  const cached = healthCache?.health
+  const notice =
+    "Could not reach the server ledger (timed out). Retry or check connection."
+  if (cached) {
+    mode = cached.mode
     return {
-      mode: "unconfigured",
-      warning: "Using this browser only until GitHub file storage is configured.",
-      repo: "rahuljyotinath/Trip_Expense",
+      ...cached,
       connected: false,
-      githubUrl: "https://github.com/rahuljyotinath/Trip_Expense",
+      warning: null,
+      notice,
       error: "Health check failed.",
     }
   }
+  mode = "unconfigured"
+  return {
+    mode: "unconfigured",
+    warning: null,
+    notice,
+    repo: "rahuljyotinath/Trip_Expense",
+    connected: false,
+    githubUrl: "https://github.com/rahuljyotinath/Trip_Expense",
+    error: "Health check failed.",
+  }
+}
+
+async function requestHealthFromServer(allowRetry: boolean): Promise<Health> {
+  try {
+    const health = await request<Health>("/api/health")
+    mode = health.mode
+    healthCache = { health: { ...health, notice: null }, at: Date.now() }
+    return healthCache.health
+  } catch (error) {
+    if (allowRetry) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return requestHealthFromServer(false)
+    }
+    throw error
+  }
+}
+
+export async function loadHealth(options?: { force?: boolean }): Promise<Health> {
+  if (
+    !options?.force &&
+    healthCache &&
+    Date.now() - healthCache.at < HEALTH_CACHE_MS
+  ) {
+    mode = healthCache.health.mode
+    return healthCache.health
+  }
+  if (healthInFlight && !options?.force) {
+    return healthInFlight
+  }
+  const run = (async () => {
+    try {
+      return await requestHealthFromServer(true)
+    } catch {
+      return healthReachabilityNotice()
+    } finally {
+      healthInFlight = null
+    }
+  })()
+  healthInFlight = run
+  return run
 }
 
 export async function fetchProfile(id: string) {
@@ -303,8 +357,8 @@ async function requestGroupById(id: string, allowRetry: boolean): Promise<Group>
   }
 }
 
-export async function fetchGroup(id: string) {
-  await ensureClientMode()
+export async function fetchGroup(id: string, options?: { skipHealth?: boolean }) {
+  await ensureClientMode(options)
   if (mode === "unconfigured") {
     const group = readLocalStore().groups.find((item) => item.id === id)
     if (!group) throw new Error("Trip not found.")
@@ -516,13 +570,12 @@ export function commitGroupPatch(
   })()
 }
 
-async function ensureClientMode() {
+async function ensureClientMode(options?: { skipHealth?: boolean }) {
   if (typeof window === "undefined") return
-  try {
-    await loadHealth()
-  } catch {
-    mode = "unconfigured"
-  }
+  if (options?.skipHealth) return
+  if (healthCache && Date.now() - healthCache.at < HEALTH_CACHE_MS) return
+  if (mode !== "local") return
+  await loadHealth()
 }
 
 async function patchGroup(id: string, body: Record<string, unknown>, groupHint?: Group) {

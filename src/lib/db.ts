@@ -125,6 +125,31 @@ export async function probePostgres(): Promise<PostgresProbe> {
   }
 }
 
+/** Health / status: repo reachability only (no Contents read). */
+export async function probeGithubRepoOnly(): Promise<GithubProbe> {
+  const target = resolveGithubTarget()
+  const base: GithubProbe = {
+    ...target,
+    connected: false,
+    githubUrl: githubUrl(target),
+    error: null,
+  }
+  const config = githubConfig()
+  if (!config) {
+    return {
+      ...base,
+      error: `Set GITHUB_TOKEN with Contents: Read and write on ${target.fullName}.`,
+    }
+  }
+  const octokit = new Octokit({ auth: config.token })
+  try {
+    await octokit.rest.repos.get({ owner: config.owner, repo: config.repo })
+    return { ...base, connected: true, error: null }
+  } catch (error) {
+    return { ...base, error: githubErrorMessage(error) }
+  }
+}
+
 export async function probeGithub(): Promise<GithubProbe> {
   const target = resolveGithubTarget()
   const base: GithubProbe = {

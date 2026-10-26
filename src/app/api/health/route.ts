@@ -1,31 +1,32 @@
 import {
-  probeGithub,
+  probeGithubRepoOnly,
   probePostgres,
   storageErrorMessage,
   storageMode,
 } from "@/lib/db"
+import { githubUrl, resolveGithubTarget } from "@/lib/github-target"
 import { json } from "@/lib/http"
 import { connection } from "next/server"
 
 export async function GET() {
   await connection()
   const mode = storageMode()
+  const target = resolveGithubTarget()
   if (mode === "postgres") {
     const postgres = await probePostgres()
-    const github = await probeGithub()
     return json({
       mode,
       connected: postgres.connected,
-      warning: storageErrorMessage(github, postgres),
-      repo: github.fullName,
-      githubUrl: github.githubUrl,
-      branch: github.branch,
-      filePath: github.filePath,
+      warning: storageErrorMessage(undefined, postgres),
+      repo: target.fullName,
+      githubUrl: githubUrl(target),
+      branch: target.branch,
+      filePath: target.filePath,
       error: postgres.error,
       ledgerVersion: postgres.version ?? null,
     })
   }
-  const probe = await probeGithub()
+  const probe = await probeGithubRepoOnly()
   return json({
     mode,
     connected: probe.connected,

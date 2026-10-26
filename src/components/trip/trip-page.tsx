@@ -58,7 +58,7 @@ export function TripPage() {
 
         const [session, nextGroup] = await Promise.all([
           fetchSessionProfile(),
-          fetchGroup(groupId),
+          fetchGroup(groupId, { skipHealth: true }),
         ])
         if (cancelled) return
         if (session?.id && session.username) {

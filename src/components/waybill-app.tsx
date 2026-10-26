@@ -489,6 +489,13 @@ export function Shell({
           <AlertDescription>{health.warning}</AlertDescription>
         </Alert>
       ) : null}
+      {health?.notice ? (
+        <Alert className="mb-4" variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Connection</AlertTitle>
+          <AlertDescription>{health.notice}</AlertDescription>
+        </Alert>
+      ) : null}
       <main className="flex-1">{children}</main>
     </div>
   )
