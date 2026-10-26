@@ -55,7 +55,7 @@ function getPostgres() {
       max: 1,
       prepare: false,
       connect_timeout: 10,
-      idle_timeout: 20,
+      idle_timeout: 60,
     })
   }
   return postgresClient
@@ -89,7 +89,6 @@ export async function probePostgres(): Promise<PostgresProbe> {
   }
   try {
     const sql = getPostgres()
-    await sql`SELECT 1`
     const rows = await sql<{ version: string }[]>`
       SELECT version FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
     `

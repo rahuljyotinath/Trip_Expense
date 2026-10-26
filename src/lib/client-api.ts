@@ -47,11 +47,52 @@ export type Health = {
   sessionReady?: boolean
 }
 
-const HEALTH_CACHE_MS = 45_000
+const HEALTH_CACHE_MS = 5 * 60_000
+const HEALTH_PERSIST_MS = 30 * 60_000
+const HEALTH_PERSIST_KEY = "waybill.health"
+const HEALTH_REQUEST_TIMEOUT_MS = 12_000
 
 let mode: StorageMode = "local"
 let healthCache: { health: Health; at: number } | null = null
 let healthInFlight: Promise<Health> | null = null
+
+function readPersistedHealth(): Health | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.sessionStorage.getItem(HEALTH_PERSIST_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { health: Health; at: number }
+    if (Date.now() - parsed.at > HEALTH_PERSIST_MS) return null
+    return parsed.health
+  } catch {
+    return null
+  }
+}
+
+function persistHealthSnapshot(health: Health) {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(
+      HEALTH_PERSIST_KEY,
+      JSON.stringify({ health: { ...health, notice: null }, at: Date.now() })
+    )
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function hydrateHealthCacheFromSession() {
+  if (healthCache) return
+  const persisted = readPersistedHealth()
+  if (!persisted) return
+  healthCache = { health: persisted, at: Date.now() }
+  mode = persisted.mode
+}
+
+function syncModeFromPersistedHealth() {
+  if (mode !== "local") return
+  hydrateHealthCacheFromSession()
+}
 
 function readLocalStore(): Store {
   if (typeof window === "undefined") return emptyStore()
@@ -135,6 +176,7 @@ export function clearSavedProfile() {
 }
 
 export async function fetchSessionProfile() {
+  syncModeFromPersistedHealth()
   if (mode === "unconfigured") {
     return loadSavedProfile()
   }
@@ -168,6 +210,7 @@ export async function signUpUser(input: {
 }
 
 export async function logInUser(input: { username: string; password: string }) {
+  syncModeFromPersistedHealth()
   if (mode === "unconfigured") {
     const result = logIn(readLocalStore(), input)
     const pub = publicProfile(result.profile)
@@ -222,18 +265,12 @@ export async function logoutUser() {
 }
 
 function healthReachabilityNotice(): Health {
-  const cached = healthCache?.health
   const notice =
     "Could not reach the server ledger (timed out). Retry or check connection."
-  if (cached) {
-    mode = cached.mode
-    return {
-      ...cached,
-      connected: false,
-      warning: null,
-      notice,
-      error: "Health check failed.",
-    }
+  const stale = healthCache?.health ?? readPersistedHealth()
+  if (stale && stale.mode !== "unconfigured") {
+    mode = stale.mode
+    return { ...stale, notice: null }
   }
   mode = "unconfigured"
   return {
@@ -246,21 +283,36 @@ function healthReachabilityNotice(): Health {
 }
 
 async function requestHealthFromServer(allowRetry: boolean): Promise<Health> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), HEALTH_REQUEST_TIMEOUT_MS)
   try {
-    const health = await request<Health>("/api/health")
-    mode = health.mode
-    healthCache = { health: { ...health, notice: null }, at: Date.now() }
-    return healthCache.health
+    const response = await fetch("/api/health", {
+      credentials: "include",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+    })
+    const data = (await response.json().catch(() => ({}))) as Health & { error?: string }
+    if (!response.ok) {
+      throw new Error(data.error || "Health check failed.")
+    }
+    mode = data.mode
+    const health = { ...data, notice: null }
+    healthCache = { health, at: Date.now() }
+    persistHealthSnapshot(health)
+    return health
   } catch (error) {
     if (allowRetry) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 400))
       return requestHealthFromServer(false)
     }
     throw error
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
 export async function loadHealth(options?: { force?: boolean }): Promise<Health> {
+  hydrateHealthCacheFromSession()
   if (
     !options?.force &&
     healthCache &&
@@ -354,6 +406,7 @@ async function requestGroupById(id: string, allowRetry: boolean): Promise<Group>
 }
 
 export async function fetchGroup(id: string, options?: { skipHealth?: boolean }) {
+  syncModeFromPersistedHealth()
   await ensureClientMode(options)
   if (mode === "unconfigured") {
     const group = readLocalStore().groups.find((item) => item.id === id)
@@ -568,9 +621,10 @@ export function commitGroupPatch(
 
 async function ensureClientMode(options?: { skipHealth?: boolean }) {
   if (typeof window === "undefined") return
+  syncModeFromPersistedHealth()
   if (options?.skipHealth) return
   if (healthCache && Date.now() - healthCache.at < HEALTH_CACHE_MS) return
-  if (mode !== "local") return
+  if (mode !== "local" && mode !== "unconfigured") return
   await loadHealth()
 }
 

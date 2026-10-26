@@ -52,15 +52,13 @@ export function TripPage() {
       setDeskError(null)
       setGroup(null)
       try {
-        const nextHealth = await loadHealth()
-        if (cancelled) return
-        setHealth(nextHealth)
-
-        const [session, nextGroup] = await Promise.all([
+        const [nextHealth, session, nextGroup] = await Promise.all([
+          loadHealth(),
           fetchSessionProfile(),
           fetchGroup(groupId, { skipHealth: true }),
         ])
         if (cancelled) return
+        setHealth(nextHealth)
         if (session?.id && session.username) {
           if (profileNeedsSetup(session)) {
             router.replace(
