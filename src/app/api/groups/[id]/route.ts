@@ -8,6 +8,7 @@ import {
   deleteExpense,
   updateExpense,
   updateGroup,
+  setMemberCover,
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
@@ -58,6 +59,7 @@ export async function PATCH(
       paymentId?: string
       fromMemberId?: string
       toMemberId?: string
+      coveredByMemberId?: string | null
       restore?: boolean
     }>(request)
 
@@ -139,6 +141,18 @@ export async function PATCH(
           paymentId: body.paymentId ?? "",
           profileId: body.profileId ?? "",
           restore: body.restore,
+        })
+      }
+      if (body.action === "cover-member") {
+        const rawCover = body.coveredByMemberId
+        return setMemberCover(store, {
+          groupId: id,
+          memberId: body.memberId ?? "",
+          coveredByMemberId:
+            rawCover === null || rawCover === undefined || rawCover === ""
+              ? null
+              : String(rawCover),
+          profileId: body.profileId ?? "",
         })
       }
       throw new Error("Unknown action.")

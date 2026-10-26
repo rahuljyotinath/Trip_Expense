@@ -100,6 +100,7 @@ export function createGroup(
       name: memberName,
       profileId:
         memberName.toLowerCase() === profile.name.toLowerCase() ? profile.id : null,
+      coveredByMemberId: null,
     })),
     expenses: [],
     payments: [],
@@ -153,7 +154,10 @@ export function addMember(store: Store, groupId: string, rawName: string) {
   }
   const next: Group = {
     ...group,
-    members: [...group.members, { id: uid("m"), name, profileId: null }],
+    members: [
+      ...group.members,
+      { id: uid("m"), name, profileId: null, coveredByMemberId: null },
+    ],
   }
   return { store: replaceGroup(store, next), group: next }
 }
@@ -401,6 +405,8 @@ export function addPayment(
   if (!group.members.some((member) => member.id === input.toMemberId)) {
     throw new Error("Receiver is not on this trip.")
   }
+  rejectCoveredPaymentSeat(group, input.fromMemberId)
+  rejectCoveredPaymentSeat(group, input.toMemberId)
 
   const payment: Payment = {
     id: uid("pay"),
@@ -437,6 +443,63 @@ export function voidPayment(
             voidedByProfileId: input.restore ? null : input.profileId,
           }
         : item
+    ),
+  }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+function rejectCoveredPaymentSeat(group: Group, memberId: string) {
+  const member = group.members.find((item) => item.id === memberId)
+  if (!member?.coveredByMemberId) return
+  const cover = group.members.find((item) => item.id === member.coveredByMemberId)
+  const coverName = cover?.name ?? "their cover"
+  throw new Error(
+    `${member.name} is covered by ${coverName} — record the payment with ${coverName}.`
+  )
+}
+
+export function setMemberCover(
+  store: Store,
+  input: {
+    groupId: string
+    memberId: string
+    coveredByMemberId: string | null
+    profileId: string
+  }
+) {
+  const group = requireGroup(store, input.groupId)
+  requireSeated(group, input.profileId)
+  const member = group.members.find((item) => item.id === input.memberId)
+  if (!member) throw new Error("Member not on this trip.")
+  const coverId = input.coveredByMemberId
+  if (coverId === null) {
+    const next: Group = {
+      ...group,
+      members: group.members.map((item) =>
+        item.id === member.id ? { ...item, coveredByMemberId: null } : item
+      ),
+    }
+    return { store: replaceGroup(store, next), group: next }
+  }
+  if (coverId === member.id) throw new Error("A seat cannot cover itself.")
+  if (!group.members.some((item) => item.id === coverId)) {
+    throw new Error("Cover is not on this trip.")
+  }
+  let walk: string | null = coverId
+  const seen = new Set<string>()
+  while (walk) {
+    if (walk === member.id) {
+      throw new Error("That cover would create a loop.")
+    }
+    if (seen.has(walk)) break
+    seen.add(walk)
+    const nextMember = group.members.find((item) => item.id === walk)
+    walk = nextMember?.coveredByMemberId ?? null
+  }
+  const next: Group = {
+    ...group,
+    members: group.members.map((item) =>
+      item.id === member.id ? { ...item, coveredByMemberId: coverId } : item
     ),
   }
   return { store: replaceGroup(store, next), group: next }

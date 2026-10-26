@@ -75,8 +75,40 @@ export function netBalances(raw: Group) {
   return result
 }
 
+export function coverRoot(group: Group, memberId: string): string {
+  const normalized = normalizeGroup(group)
+  const byId = new Map(normalized.members.map((member) => [member.id, member]))
+  if (!byId.has(memberId)) return memberId
+  const seen = new Set<string>()
+  let current = memberId
+  while (true) {
+    const member = byId.get(current)
+    const coverId = member?.coveredByMemberId
+    if (!coverId || coverId === current) return current
+    if (seen.has(coverId)) {
+      throw new Error("Cover link cycle on this trip.")
+    }
+    seen.add(current)
+    current = coverId
+  }
+}
+
+export function settlementBalances(raw: Group) {
+  const group = normalizeGroup(raw)
+  const rawNets = netBalances(group)
+  const folded: Record<string, number> = { ...rawNets }
+  for (const member of group.members) {
+    const root = coverRoot(group, member.id)
+    if (root === member.id) continue
+    const amount = folded[member.id] ?? 0
+    folded[root] = (folded[root] ?? 0) + amount
+    folded[member.id] = 0
+  }
+  return folded
+}
+
 export function simplifyDebts(group: Group): Transfer[] {
-  const balances = netBalances(group)
+  const balances = settlementBalances(group)
   const debtors: { id: string; amount: number }[] = []
   const creditors: { id: string; amount: number }[] = []
 

@@ -14,6 +14,7 @@ export type Member = {
   id: string
   name: string
   profileId: string | null
+  coveredByMemberId: string | null
 }
 
 export type SplitMode = "equal" | "percent"
@@ -116,11 +117,20 @@ export function publicProfile(profile: Profile): PublicProfile {
   }
 }
 
+export function normalizeMember(member: Member): Member {
+  return {
+    ...member,
+    profileId: member.profileId ?? null,
+    coveredByMemberId: member.coveredByMemberId ?? null,
+  }
+}
+
 export function normalizeGroup(group: Group): Group {
   return {
     ...group,
     startDate: group.startDate ?? null,
     endDate: group.endDate ?? null,
+    members: (group.members ?? []).map(normalizeMember),
     expenses: (group.expenses ?? []).map(normalizeExpense),
     payments: (group.payments ?? []).map(normalizePayment),
   }

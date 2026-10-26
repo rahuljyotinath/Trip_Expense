@@ -30,8 +30,8 @@ function trip(expenses: Expense[], payments: Payment[] = []): Group {
     createdByProfileId: "p1",
     createdAt: "2026-01-01T00:00:00.000Z",
     members: [
-      { id: "a", name: "A", profileId: "p1" },
-      { id: "b", name: "B", profileId: null },
+      { id: "a", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "b", name: "B", profileId: null, coveredByMemberId: null },
     ],
     expenses,
     payments,

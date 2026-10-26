@@ -1,5 +1,5 @@
 import { fromPaise, toPaise } from "@/lib/money"
-import { expenseShareCutsPaise, netBalances } from "@/lib/settle"
+import { expenseShareCutsPaise, settlementBalances } from "@/lib/settle"
 import { normalizeGroup, type Group } from "@/lib/types"
 
 export type MemberTripStats = {
@@ -15,7 +15,7 @@ export type TripStats = {
 
 export function tripStats(raw: Group): TripStats {
   const group = normalizeGroup(raw)
-  const nets = netBalances(group)
+  const nets = settlementBalances(group)
   const sharePaise: Record<string, number> = {}
   const paidPaise: Record<string, number> = {}
   for (const member of group.members) {

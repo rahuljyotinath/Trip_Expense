@@ -1,6 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { expenseShareCutsPaise, netBalances, simplifyDebts } from "./settle"
+import {
+  coverRoot,
+  expenseShareCutsPaise,
+  netBalances,
+  settlementBalances,
+  simplifyDebts,
+} from "./settle"
 import { fromPaise } from "./money"
 import type { Expense, Group, Payment } from "./types"
 
@@ -29,9 +35,9 @@ function trip(expenses: Expense[], payments: Payment[] = []): Group {
     createdByProfileId: "p1",
     createdAt: "2026-01-01T00:00:00.000Z",
     members: [
-      { id: "a", name: "A", profileId: "p1" },
-      { id: "b", name: "B", profileId: null },
-      { id: "c", name: "C", profileId: null },
+      { id: "a", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "b", name: "B", profileId: null, coveredByMemberId: null },
+      { id: "c", name: "C", profileId: null, coveredByMemberId: null },
     ],
     expenses,
     payments,
@@ -211,4 +217,105 @@ test("two bills collapse to fewer transfers", () => {
   const paid = transfers.reduce((sum, item) => sum + item.amount, 0)
   assert.equal(paid, 200)
   assert.ok(transfers.every((item) => item.toMemberId === "a"))
+})
+
+function tripWithMembers(
+  members: Group["members"],
+  expenses: Expense[],
+  payments: Payment[] = []
+): Group {
+  return { ...trip(expenses, payments), members }
+}
+
+test("cover absorbs dependent net in settlement", () => {
+  const group = tripWithMembers(
+    [
+      { id: "priya", name: "Priya", profileId: "p1", coveredByMemberId: null },
+      { id: "aarav", name: "Aarav", profileId: null, coveredByMemberId: "priya" },
+      { id: "rahul", name: "Rahul", profileId: null, coveredByMemberId: null },
+    ],
+    [
+      expense({
+        id: "e1",
+        amount: 300,
+        paidByMemberId: "priya",
+        participantIds: ["priya", "aarav", "rahul"],
+      }),
+    ]
+  )
+  const folded = settlementBalances(group)
+  assert.equal(folded.priya, 100)
+  assert.equal(folded.aarav, 0)
+  assert.equal(folded.rahul, -100)
+  assert.deepEqual(simplifyDebts(group), [
+    { fromMemberId: "rahul", toMemberId: "priya", amount: 100 },
+  ])
+})
+
+test("cover settles even when not on the bill", () => {
+  const group = tripWithMembers(
+    [
+      { id: "a", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "b", name: "B", profileId: null, coveredByMemberId: "c" },
+      { id: "c", name: "C", profileId: null, coveredByMemberId: null },
+    ],
+    [
+      expense({
+        id: "e1",
+        amount: 200,
+        paidByMemberId: "a",
+        participantIds: ["a", "b"],
+      }),
+    ]
+  )
+  assert.deepEqual(simplifyDebts(group), [
+    { fromMemberId: "c", toMemberId: "a", amount: 100 },
+  ])
+})
+
+test("cover chain resolves to root for settlement", () => {
+  const group = tripWithMembers(
+    [
+      { id: "a", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "b", name: "B", profileId: null, coveredByMemberId: "a" },
+      { id: "c", name: "C", profileId: null, coveredByMemberId: "b" },
+    ],
+    [
+      expense({
+        id: "e1",
+        amount: 100,
+        paidByMemberId: "b",
+        participantIds: ["c"],
+      }),
+    ]
+  )
+  assert.equal(coverRoot(group, "c"), "a")
+  assert.equal(coverRoot(group, "b"), "a")
+  const folded = settlementBalances(group)
+  assert.equal(folded.c, 0)
+  assert.equal(folded.b, 0)
+  assert.equal(folded.a, 0)
+})
+
+test("covered seats are not transfer endpoints", () => {
+  const group = tripWithMembers(
+    [
+      { id: "a", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "b", name: "B", profileId: null, coveredByMemberId: "a" },
+    ],
+    [
+      expense({
+        id: "e1",
+        amount: 100,
+        paidByMemberId: "a",
+        participantIds: ["a", "b"],
+      }),
+    ]
+  )
+  const transfers = simplifyDebts(group)
+  assert.equal(transfers.length, 0)
+  for (const transfer of transfers) {
+    assert.notEqual(transfer.fromMemberId, "b")
+    assert.notEqual(transfer.toMemberId, "b")
+  }
 })

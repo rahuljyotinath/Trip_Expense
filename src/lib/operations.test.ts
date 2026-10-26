@@ -2,9 +2,11 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   addExpense,
+  addPayment,
   createGroup,
   createProfile,
   deleteExpense,
+  setMemberCover,
   updateExpense,
   updateGroup,
 } from "./operations"
@@ -160,4 +162,111 @@ test("deleteExpense removes row", () => {
     profileId: profile.id,
   })
   assert.equal(after.expenses.length, 0)
+})
+
+test("setMemberCover requires claimed seat", () => {
+  const { store, profile } = baseStore()
+  const { store: s1, group } = seatedTrip(store, profile.id)
+  const friend = group.members[1]!
+  const { store: s2 } = createProfile(s1, "Stranger")
+  const stranger = s2.profiles.find((item) => item.name === "Stranger")!
+  assert.throws(() =>
+    setMemberCover(s2, {
+      groupId: group.id,
+      memberId: friend.id,
+      coveredByMemberId: group.members[0]!.id,
+      profileId: stranger.id,
+    })
+  )
+})
+
+test("setMemberCover rejects self and cycles", () => {
+  const { store, profile } = baseStore()
+  const { store: s1, group } = seatedTrip(store, profile.id)
+  const opener = group.members[0]!
+  const friend = group.members[1]!
+  assert.throws(() =>
+    setMemberCover(s1, {
+      groupId: group.id,
+      memberId: friend.id,
+      coveredByMemberId: friend.id,
+      profileId: profile.id,
+    })
+  )
+  const { store: s2, group: g2 } = setMemberCover(s1, {
+    groupId: group.id,
+    memberId: friend.id,
+    coveredByMemberId: opener.id,
+    profileId: profile.id,
+  })
+  assert.equal(
+    g2.members.find((item) => item.id === friend.id)?.coveredByMemberId,
+    opener.id
+  )
+  assert.throws(() =>
+    setMemberCover(s2, {
+      groupId: g2.id,
+      memberId: opener.id,
+      coveredByMemberId: friend.id,
+      profileId: profile.id,
+    })
+  )
+})
+
+test("setMemberCover clears cover", () => {
+  const { store, profile } = baseStore()
+  const { store: s1, group } = seatedTrip(store, profile.id)
+  const opener = group.members[0]!
+  const friend = group.members[1]!
+  const { store: s2 } = setMemberCover(s1, {
+    groupId: group.id,
+    memberId: friend.id,
+    coveredByMemberId: opener.id,
+    profileId: profile.id,
+  })
+  const { group: cleared } = setMemberCover(s2, {
+    groupId: group.id,
+    memberId: friend.id,
+    coveredByMemberId: null,
+    profileId: profile.id,
+  })
+  assert.equal(
+    cleared.members.find((item) => item.id === friend.id)?.coveredByMemberId,
+    null
+  )
+})
+
+test("addPayment rejects covered from or to seat", () => {
+  const { store, profile } = baseStore()
+  let s = store
+  let group: Group
+  ;({ store: s, group } = seatedTrip(s, profile.id))
+  const opener = group.members[0]!
+  const friend = group.members[1]!
+  ;({ store: s, group } = setMemberCover(s, {
+    groupId: group.id,
+    memberId: friend.id,
+    coveredByMemberId: opener.id,
+    profileId: profile.id,
+  }))
+  assert.throws(() =>
+    addPayment(s, {
+      groupId: group.id,
+      date: "2026-03-02",
+      amount: 10,
+      fromMemberId: friend.id,
+      toMemberId: opener.id,
+      createdByProfileId: profile.id,
+    })
+  )
+  assert.throws(() =>
+    addPayment(s, {
+      groupId: group.id,
+      date: "2026-03-02",
+      amount: 10,
+      fromMemberId: opener.id,
+      toMemberId: friend.id,
+      createdByProfileId: profile.id,
+    })
+  )
 })

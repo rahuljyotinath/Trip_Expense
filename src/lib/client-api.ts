@@ -14,6 +14,7 @@ import {
   addMember,
   addPayment,
   claimMember,
+  setMemberCover,
   createGroup,
   deleteExpense,
   groupByCode,
@@ -338,6 +339,18 @@ function runGroupPatchMutator(
       paymentId: String(body.paymentId ?? ""),
       profileId: String(body.profileId ?? ""),
       restore: Boolean(body.restore),
+    })
+  }
+  if (action === "cover-member") {
+    const rawCover = body.coveredByMemberId
+    return setMemberCover(store, {
+      groupId: id,
+      memberId: String(body.memberId ?? ""),
+      coveredByMemberId:
+        rawCover === null || rawCover === undefined || rawCover === ""
+          ? null
+          : String(rawCover),
+      profileId: String(body.profileId ?? ""),
     })
   }
   return null

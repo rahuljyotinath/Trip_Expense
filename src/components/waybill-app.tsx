@@ -12,7 +12,6 @@ import {
   Plus,
   Receipt,
   Trash2,
-  Users,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -56,7 +55,7 @@ import {
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
-import { netBalances, simplifyDebts } from "@/lib/settle"
+import { settlementBalances, simplifyDebts } from "@/lib/settle"
 import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
 import type { Expense, Group, PublicProfile } from "@/lib/types"
@@ -1064,7 +1063,7 @@ function TripDesk({
 }) {
   const seat = mySeat(group, profile.id)
   const isOpener = group.createdByProfileId === profile.id
-  const balances = useMemo(() => netBalances(group), [group])
+  const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
   const ledgerExpenses = useMemo(
     () =>
@@ -1381,22 +1380,87 @@ function TripDesk({
           )}
         </TabsContent>
         <TabsContent value="people" className="space-y-3 pt-4">
-          {group.members.map((member) => (
-            <div
-              key={member.id}
-              className="flex items-center justify-between rounded-lg border px-3 py-2"
-            >
-              <div>
-                <p className="font-medium">{member.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {member.profileId
-                    ? "Nickname matched to a profile"
-                    : "Open nickname — they still need to claim"}
-                </p>
+          {group.members.map((member) => {
+            const cover = member.coveredByMemberId
+              ? group.members.find((item) => item.id === member.coveredByMemberId)
+              : null
+            const settlesFor = group.members.filter(
+              (item) => item.coveredByMemberId === member.id
+            )
+            const balance = balances[member.id] ?? 0
+            return (
+              <div
+                key={member.id}
+                className="flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <p className="font-medium">
+                    {member.name}
+                    {member.profileId === profile.id ? " · you" : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {member.profileId
+                      ? "Nickname matched to a profile"
+                      : "Open nickname — they still need to claim"}
+                  </p>
+                  {cover ? (
+                    <Badge variant="secondary" className="w-fit">
+                      Covered by {cover.name}
+                    </Badge>
+                  ) : null}
+                  {settlesFor.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Also settles for{" "}
+                      {settlesFor.map((item) => item.name).join(", ")}
+                    </p>
+                  ) : null}
+                  {!cover && Math.abs(balance) > 0.005 ? (
+                    <p className="text-xs">
+                      <span className={balance >= 0 ? "text-moss" : "text-stamp"}>
+                        {balance >= 0 ? "Is owed " : "Owes "}
+                        {formatMoney(Math.abs(balance), group.currency)}
+                      </span>
+                      <span className="text-muted-foreground"> (cash settle)</span>
+                    </p>
+                  ) : null}
+                </div>
+                <label className="flex shrink-0 flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">Settles cash</span>
+                  <select
+                    className="rounded-md border bg-background px-2 py-1.5 text-sm disabled:opacity-50"
+                    disabled={!seat || busy}
+                    value={member.coveredByMemberId ?? member.id}
+                    onChange={(event) => {
+                      const picked = event.target.value
+                      applyGroupPatchOptimistic({
+                        group,
+                        body: {
+                          action: "cover-member",
+                          memberId: member.id,
+                          coveredByMemberId:
+                            picked === member.id ? null : picked,
+                          profileId: profile.id,
+                        },
+                        onGroup,
+                        onError,
+                        onBusy,
+                        refresh: onRefresh,
+                      })
+                    }}
+                  >
+                    <option value={member.id}>Themselves</option>
+                    {group.members
+                      .filter((item) => item.id !== member.id)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
               </div>
-              <Users className="size-4 text-muted-foreground" />
-            </div>
-          ))}
+            )
+          })}
           <Button variant="outline" onClick={() => onMemberOpen(true)}>
             <Plus /> Add a nickname
           </Button>
