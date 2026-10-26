@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { previewGroupPatch } from "./client-api"
-import { emptyStore, type Group, type PublicProfile } from "./types"
+import { type Group, type PublicProfile } from "./types"
 
 const pub: PublicProfile = {
   id: "p1",
