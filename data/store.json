@@ -133,7 +133,26 @@
           "profileId": null
         }
       ],
-      "expenses": [],
+      "expenses": [
+        {
+          "id": "e_3111556d01eaefeb",
+          "date": "2026-10-19",
+          "amount": 789,
+          "reason": "Cab 2 - Beltola to ghy airport",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:12:44.287Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        }
+      ],
       "payments": []
     },
     {
