@@ -5,6 +5,9 @@ import {
   addMember,
   addPayment,
   claimMember,
+  deleteExpense,
+  updateExpense,
+  updateGroup,
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
@@ -40,6 +43,8 @@ export async function PATCH(
     const body = await readBody<{
       action?: string
       name?: string
+      startDate?: string | null
+      endDate?: string | null
       profileId?: string
       memberId?: string
       date?: string
@@ -67,6 +72,15 @@ export async function PATCH(
       if (body.action === "add-member") {
         return addMember(store, id, body.name ?? "")
       }
+      if (body.action === "update-group") {
+        return updateGroup(store, {
+          groupId: id,
+          profileId: body.profileId ?? "",
+          name: body.name,
+          startDate: body.startDate,
+          endDate: body.endDate,
+        })
+      }
       if (body.action === "add-expense") {
         return addExpense(store, {
           groupId: id,
@@ -80,7 +94,28 @@ export async function PATCH(
           createdByProfileId: body.profileId ?? "",
         })
       }
-      if (body.action === "void-expense" || body.action === "delete-expense") {
+      if (body.action === "delete-expense") {
+        return deleteExpense(store, {
+          groupId: id,
+          expenseId: body.expenseId ?? "",
+          profileId: body.profileId ?? "",
+        })
+      }
+      if (body.action === "update-expense") {
+        return updateExpense(store, {
+          groupId: id,
+          expenseId: body.expenseId ?? "",
+          profileId: body.profileId ?? "",
+          date: body.date ?? "",
+          amount: Number(body.amount),
+          reason: body.reason ?? "",
+          paidByMemberId: body.paidByMemberId ?? "",
+          participantIds: body.participantIds ?? [],
+          split: body.split,
+          shares: body.shares,
+        })
+      }
+      if (body.action === "void-expense") {
         return voidExpense(store, {
           groupId: id,
           expenseId: body.expenseId ?? "",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { netBalances, simplifyDebts } from "./settle"
+import { expenseShareCutsPaise, netBalances, simplifyDebts } from "./settle"
+import { fromPaise } from "./money"
 import type { Expense, Group, Payment } from "./types"
 
 function expense(partial: Partial<Expense> & Pick<Expense, "id" | "amount" | "paidByMemberId" | "participantIds">): Expense {
@@ -23,6 +24,8 @@ function trip(expenses: Expense[], payments: Payment[] = []): Group {
     name: "Test",
     code: "AAAAAA",
     currency: "INR",
+    startDate: null,
+    endDate: null,
     createdByProfileId: "p1",
     createdAt: "2026-01-01T00:00:00.000Z",
     members: [
@@ -34,6 +37,36 @@ function trip(expenses: Expense[], payments: Payment[] = []): Group {
     payments,
   }
 }
+
+test("expenseShareCutsPaise skips voided", () => {
+  const cuts = expenseShareCutsPaise(
+    expense({
+      id: "e1",
+      amount: 100,
+      paidByMemberId: "a",
+      participantIds: ["a", "b"],
+      voidedAt: "2026-01-02T00:00:00.000Z",
+      voidedByProfileId: "p1",
+    }),
+    ["a", "b"]
+  )
+  assert.equal(cuts, null)
+})
+
+test("expenseShareCutsPaise equal split", () => {
+  const cuts = expenseShareCutsPaise(
+    expense({
+      id: "e1",
+      amount: 100,
+      paidByMemberId: "a",
+      participantIds: ["a", "b"],
+    }),
+    ["a", "b"]
+  )
+  assert.ok(cuts)
+  assert.equal(fromPaise(cuts.get("a") ?? 0), 50)
+  assert.equal(fromPaise(cuts.get("b") ?? 0), 50)
+})
 
 test("equal split of one bill", () => {
   const group = trip([

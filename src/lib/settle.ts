@@ -1,6 +1,34 @@
 import { fromPaise, toPaise } from "@/lib/money"
 import { allocatePercent } from "@/lib/shares"
-import { normalizeGroup, type Group, type Transfer } from "@/lib/types"
+import { normalizeGroup, type Expense, type Group, type Transfer } from "@/lib/types"
+
+function equalShareCutsPaise(total: number, people: string[]) {
+  const cuts = new Map<string, number>()
+  const share = Math.floor(total / people.length)
+  let remainder = total - share * people.length
+  for (const id of people) {
+    let cut = share
+    if (remainder > 0) {
+      cut += 1
+      remainder -= 1
+    }
+    cuts.set(id, cut)
+  }
+  return cuts
+}
+
+/** Each participant's share of one expense, in paise. Skips voided / invalid rows. */
+export function expenseShareCutsPaise(expense: Expense, memberIds: Iterable<string>) {
+  if (expense.voidedAt) return null
+  const valid = new Set(memberIds)
+  const people = expense.participantIds.filter((id) => valid.has(id))
+  if (people.length === 0) return null
+  const total = toPaise(expense.amount)
+  if (expense.split === "percent") {
+    return allocatePercent(total, people, expense.shares)
+  }
+  return equalShareCutsPaise(total, people)
+}
 
 export function netBalances(raw: Group) {
   const group = normalizeGroup(raw)
@@ -10,31 +38,16 @@ export function netBalances(raw: Group) {
   }
 
   for (const expense of group.expenses) {
-    if (expense.voidedAt) continue
-    const people = expense.participantIds.filter((id) => balances.has(id))
-    if (people.length === 0) continue
+    const cuts = expenseShareCutsPaise(
+      expense,
+      group.members.map((member) => member.id)
+    )
+    if (!cuts) continue
     const total = toPaise(expense.amount)
-
     const payer = balances.get(expense.paidByMemberId)
     if (payer === undefined) continue
     balances.set(expense.paidByMemberId, payer + total)
-
-    if (expense.split === "percent") {
-      const cuts = allocatePercent(total, people, expense.shares)
-      for (const [id, cut] of cuts) {
-        balances.set(id, (balances.get(id) ?? 0) - cut)
-      }
-      continue
-    }
-
-    const share = Math.floor(total / people.length)
-    let remainder = total - share * people.length
-    for (const id of people) {
-      let cut = share
-      if (remainder > 0) {
-        cut += 1
-        remainder -= 1
-      }
+    for (const [id, cut] of cuts) {
       balances.set(id, (balances.get(id) ?? 0) - cut)
     }
   }

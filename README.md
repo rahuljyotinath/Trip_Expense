@@ -1,4 +1,4 @@
-# Waybill
+# Trip Expenses Balancer
 
 Group trip expenses. One person opens a trip and names the people. Everyone else makes a profile, enters the join code, and claims their name. Spends store date, amount, reason, payer, and who was on the bill — one person or everyone.
 
@@ -31,6 +31,7 @@ Repo: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expen
 | `GITHUB_TOKEN` | Fine-grained PAT, **Contents: Read and write** on this repo |
 | `GITHUB_REPO` | `rahuljyotinath/Trip_Expense` |
 | `GITHUB_BRANCH` | `ledger` |
+| `SESSION_SECRET` | Random string (sign-in session cookies) |
 
 4. Deploy. If the URL says “Protected by Vercel Authentication”, turn off Deployment Protection for Production (Vercel → Project → Settings → Deployment Protection).
 5. Set `GITHUB_TOKEN` before the first production deploy, or the live site stays browser-only.
@@ -41,11 +42,11 @@ Locally: copy `.env.example` to `.env.local` and set `GITHUB_TOKEN`.
 
 ## How a trip works
 
-1. Type your name. That is your profile. The browser remembers it.
-2. **Open a trip**: name it, list everyone. You get a 6-letter code.
-3. **Join**: enter the code, claim the name that is you.
-4. Add a spend. Uncheck anyone who was not on that bill. Split equal or by percent.
+1. **Sign up** with username + password, or **sign in** if you already have an account.
+2. **Open a trip**: name it, list everyone. Share the invite link.
+3. **Join**: paste the invite link, claim the name that is you.
+4. Add a spend. Uncheck anyone who was not on that bill — split is equal among those checked.
 5. Settle shows who pays whom. Mark a line **paid** when cash changes hands.
-6. Wrong spend? Cross the line out. It stays on the page and drops out of the math.
+6. Edit or delete a spend you logged (or the trip opener can).
 
 One currency per trip (INR by default). Roster names are nicknames — two Rahuls need two different labels.

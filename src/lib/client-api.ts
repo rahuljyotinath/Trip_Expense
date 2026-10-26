@@ -1,21 +1,25 @@
 import {
   emptyStore,
   normalizeStore,
+  publicProfile,
   type Group,
-  type Profile,
+  type PublicProfile,
   type SplitMode,
   type StorageMode,
   type Store,
 } from "@/lib/types"
+import { logIn, signUp } from "@/lib/auth-ops"
 import {
   addExpense,
   addMember,
   addPayment,
   claimMember,
   createGroup,
-  createProfile,
+  deleteExpense,
   groupByCode,
   groupsForProfile,
+  updateExpense,
+  updateGroup,
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
@@ -57,6 +61,7 @@ function writeLocalStore(store: Store) {
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
+    credentials: "include",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   })
@@ -71,22 +76,81 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return data
 }
 
-export function loadSavedProfile() {
+export function loadSavedProfile(): PublicProfile | null {
   if (typeof window === "undefined") return null
   try {
     const raw = window.localStorage.getItem(PROFILE_KEY)
-    return raw ? (JSON.parse(raw) as Profile) : null
+    return raw ? (JSON.parse(raw) as PublicProfile) : null
   } catch {
     return null
   }
 }
 
-export function saveProfile(profile: Profile) {
+export function saveProfile(profile: PublicProfile) {
   window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
 }
 
 export function clearSavedProfile() {
   window.localStorage.removeItem(PROFILE_KEY)
+}
+
+export async function fetchSessionProfile() {
+  if (mode === "unconfigured") {
+    return loadSavedProfile()
+  }
+  try {
+    const data = await request<{ profile: PublicProfile | null }>("/api/auth/session")
+    if (data.profile) saveProfile(data.profile)
+    return data.profile
+  } catch {
+    return null
+  }
+}
+
+export async function signUpUser(input: {
+  username: string
+  password: string
+  name?: string
+}) {
+  if (mode === "unconfigured") {
+    const result = signUp(readLocalStore(), input)
+    writeLocalStore(result.store)
+    const pub = publicProfile(result.profile)
+    saveProfile(pub)
+    return pub
+  }
+  const data = await request<{ profile: PublicProfile }>("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  saveProfile(data.profile)
+  return data.profile
+}
+
+export async function logInUser(input: { username: string; password: string }) {
+  if (mode === "unconfigured") {
+    const result = logIn(readLocalStore(), input)
+    const pub = publicProfile(result.profile)
+    saveProfile(pub)
+    return pub
+  }
+  const data = await request<{ profile: PublicProfile }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  saveProfile(data.profile)
+  return data.profile
+}
+
+export async function logoutUser() {
+  clearSavedProfile()
+  if (mode !== "unconfigured") {
+    try {
+      await request<{ ok: boolean }>("/api/auth/logout", { method: "POST" })
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function loadHealth(): Promise<Health> {
@@ -111,24 +175,11 @@ export async function fetchProfile(id: string) {
   if (mode === "unconfigured") {
     const profile = readLocalStore().profiles.find((item) => item.id === id)
     if (!profile) throw new Error("Profile not found.")
-    return profile
+    return publicProfile(profile)
   }
-  const data = await request<{ profile: Profile }>(`/api/profiles?id=${encodeURIComponent(id)}`)
-  return data.profile
-}
-
-export async function createUserProfile(name: string) {
-  if (mode === "unconfigured") {
-    const result = createProfile(readLocalStore(), name)
-    writeLocalStore(result.store)
-    saveProfile(result.profile)
-    return result.profile
-  }
-  const data = await request<{ profile: Profile }>("/api/profiles", {
-    method: "POST",
-    body: JSON.stringify({ name }),
-  })
-  saveProfile(data.profile)
+  const data = await request<{ profile: PublicProfile }>(
+    `/api/profiles?id=${encodeURIComponent(id)}`
+  )
   return data.profile
 }
 
@@ -167,6 +218,8 @@ export async function openTrip(input: {
   memberNames: string[]
   createdByProfileId: string
   currency?: string
+  startDate?: string | null
+  endDate?: string | null
 }) {
   if (mode === "unconfigured") {
     const result = createGroup(readLocalStore(), input)
@@ -193,7 +246,25 @@ async function patchGroup(id: string, body: Record<string, unknown>) {
           })
         : action === "add-member"
           ? addMember(store, id, String(body.name ?? ""))
-          : action === "add-expense"
+          : action === "update-group"
+            ? updateGroup(store, {
+                groupId: id,
+                profileId: String(body.profileId ?? ""),
+                name: body.name !== undefined ? String(body.name) : undefined,
+                startDate:
+                  body.startDate === undefined
+                    ? undefined
+                    : body.startDate === null
+                      ? null
+                      : String(body.startDate),
+                endDate:
+                  body.endDate === undefined
+                    ? undefined
+                    : body.endDate === null
+                      ? null
+                      : String(body.endDate),
+              })
+            : action === "add-expense"
             ? addExpense(store, {
                 groupId: id,
                 date: String(body.date ?? ""),
@@ -205,14 +276,33 @@ async function patchGroup(id: string, body: Record<string, unknown>) {
                 shares: (body.shares as Record<string, number>) ?? {},
                 createdByProfileId: String(body.profileId ?? ""),
               })
-            : action === "void-expense" || action === "delete-expense"
-              ? voidExpense(store, {
+            : action === "delete-expense"
+              ? deleteExpense(store, {
                   groupId: id,
                   expenseId: String(body.expenseId ?? ""),
                   profileId: String(body.profileId ?? ""),
-                  restore: Boolean(body.restore),
                 })
-              : action === "add-payment"
+              : action === "update-expense"
+                ? updateExpense(store, {
+                    groupId: id,
+                    expenseId: String(body.expenseId ?? ""),
+                    profileId: String(body.profileId ?? ""),
+                    date: String(body.date ?? ""),
+                    amount: Number(body.amount),
+                    reason: String(body.reason ?? ""),
+                    paidByMemberId: String(body.paidByMemberId ?? ""),
+                    participantIds: (body.participantIds as string[]) ?? [],
+                    split: body.split as SplitMode | undefined,
+                    shares: (body.shares as Record<string, number>) ?? {},
+                  })
+                : action === "void-expense"
+                  ? voidExpense(store, {
+                      groupId: id,
+                      expenseId: String(body.expenseId ?? ""),
+                      profileId: String(body.profileId ?? ""),
+                      restore: Boolean(body.restore),
+                    })
+                  : action === "add-payment"
                 ? addPayment(store, {
                     groupId: id,
                     date: String(body.date ?? ""),
@@ -248,6 +338,18 @@ export function inviteName(groupId: string, name: string) {
   return patchGroup(groupId, { action: "add-member", name })
 }
 
+export function updateTripDetails(
+  groupId: string,
+  input: {
+    profileId: string
+    name?: string
+    startDate?: string | null
+    endDate?: string | null
+  }
+) {
+  return patchGroup(groupId, { action: "update-group", ...input })
+}
+
 export function saveExpense(
   groupId: string,
   input: {
@@ -271,6 +373,27 @@ export function crossExpense(
   restore = false
 ) {
   return patchGroup(groupId, { action: "void-expense", expenseId, profileId, restore })
+}
+
+export function patchExpense(
+  groupId: string,
+  input: {
+    expenseId: string
+    date: string
+    amount: number
+    reason: string
+    paidByMemberId: string
+    participantIds: string[]
+    split: SplitMode
+    shares: Record<string, number>
+    profileId: string
+  }
+) {
+  return patchGroup(groupId, { action: "update-expense", ...input })
+}
+
+export function removeExpense(groupId: string, expenseId: string, profileId: string) {
+  return patchGroup(groupId, { action: "delete-expense", expenseId, profileId })
 }
 
 export function recordPayment(

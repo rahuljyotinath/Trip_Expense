@@ -1,6 +1,6 @@
-import { readStore, storageMode, updateStore } from "@/lib/db"
-import { fail, json, readBody } from "@/lib/http"
-import { createProfile } from "@/lib/operations"
+import { readStore, storageMode } from "@/lib/db"
+import { fail, json } from "@/lib/http"
+import { publicProfile } from "@/lib/types"
 
 export async function GET(request: Request) {
   if (storageMode() === "unconfigured") {
@@ -12,20 +12,7 @@ export async function GET(request: Request) {
     const store = await readStore()
     const profile = store.profiles.find((item) => item.id === id)
     if (!profile) return json({ error: "Profile not found." }, 404)
-    return json({ profile })
-  } catch (error) {
-    return fail(error)
-  }
-}
-
-export async function POST(request: Request) {
-  if (storageMode() === "unconfigured") {
-    return json({ error: "unconfigured" }, 503)
-  }
-  try {
-    const body = await readBody<{ name?: string }>(request)
-    const result = await updateStore((store) => createProfile(store, body.name ?? ""))
-    return json({ profile: result.profile })
+    return json({ profile: publicProfile(profile) })
   } catch (error) {
     return fail(error)
   }

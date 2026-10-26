@@ -26,7 +26,11 @@ export function createProfile(store: Store, rawName: string) {
   if (!name) throw new Error("Give a real name. 1–40 characters.")
   const profile: Profile = {
     id: uid("p"),
+    username: "",
+    passwordHash: "",
     name,
+    email: null,
+    phone: null,
     createdAt: nowIso(),
   }
   return {
@@ -40,6 +44,8 @@ export function createGroup(
   input: {
     name: string
     currency?: string
+    startDate?: string | null
+    endDate?: string | null
     memberNames: string[]
     createdByProfileId: string
   }
@@ -74,11 +80,19 @@ export function createGroup(
     code = joinCode()
   }
 
+  const startDate = parseOptionalDate(input.startDate)
+  const endDate = parseOptionalDate(input.endDate)
+  if (startDate && endDate && startDate > endDate) {
+    throw new Error("End date must be on or after the start date.")
+  }
+
   const group: Group = {
     id: uid("g"),
     name,
     code,
     currency,
+    startDate,
+    endDate,
     createdByProfileId: profile.id,
     createdAt: nowIso(),
     members: unique.map((memberName) => ({
@@ -95,6 +109,39 @@ export function createGroup(
     store: { ...store, groups: [group, ...store.groups] },
     group,
   }
+}
+
+export function updateGroup(
+  store: Store,
+  input: {
+    groupId: string
+    profileId: string
+    name?: string
+    startDate?: string | null
+    endDate?: string | null
+  }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (group.createdByProfileId !== input.profileId) {
+    throw new Error("Only the trip opener can edit trip details.")
+  }
+
+  const name =
+    input.name === undefined ? group.name : cleanName(input.name, 60)
+  if (!name) throw new Error("Trip needs a name.")
+
+  const startDate =
+    input.startDate === undefined
+      ? group.startDate
+      : parseOptionalDate(input.startDate)
+  const endDate =
+    input.endDate === undefined ? group.endDate : parseOptionalDate(input.endDate)
+  if (startDate && endDate && startDate > endDate) {
+    throw new Error("End date must be on or after the start date.")
+  }
+
+  const next: Group = { ...group, name, startDate, endDate }
+  return { store: replaceGroup(store, next), group: next }
 }
 
 export function addMember(store: Store, groupId: string, rawName: string) {
@@ -146,6 +193,13 @@ function requireDate(date: string) {
   }
 }
 
+function parseOptionalDate(raw: string | null | undefined) {
+  const date = (raw ?? "").trim()
+  if (!date) return null
+  requireDate(date)
+  return date
+}
+
 function requireSeated(group: Group, profileId: string) {
   if (!group.members.some((member) => member.profileId === profileId)) {
     throw new Error("Claim your nickname on this trip first.")
@@ -174,6 +228,32 @@ export function addExpense(
   if (!profile) throw new Error("Set up your profile first.")
   const group = requireGroup(store, input.groupId)
   requireSeated(group, profile.id)
+  const fields = validateExpenseInput(group, input)
+
+  const expense: Expense = {
+    id: uid("e"),
+    ...fields,
+    createdByProfileId: profile.id,
+    createdAt: nowIso(),
+    voidedAt: null,
+    voidedByProfileId: null,
+  }
+  const next: Group = { ...group, expenses: [expense, ...group.expenses] }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+function validateExpenseInput(
+  group: Group,
+  input: {
+    date: string
+    amount: number
+    reason: string
+    paidByMemberId: string
+    participantIds: string[]
+    split?: SplitMode
+    shares?: Record<string, number>
+  }
+) {
   requireDate(input.date)
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new Error("Amount must be more than zero.")
@@ -200,8 +280,7 @@ export function addExpense(
     }
   }
 
-  const expense: Expense = {
-    id: uid("e"),
+  return {
     date: input.date,
     amount: Math.round(input.amount * 100) / 100,
     reason,
@@ -209,12 +288,63 @@ export function addExpense(
     participantIds,
     split,
     shares,
-    createdByProfileId: profile.id,
-    createdAt: nowIso(),
-    voidedAt: null,
-    voidedByProfileId: null,
   }
-  const next: Group = { ...group, expenses: [expense, ...group.expenses] }
+}
+
+export function updateExpense(
+  store: Store,
+  input: {
+    groupId: string
+    expenseId: string
+    profileId: string
+    date: string
+    amount: number
+    reason: string
+    paidByMemberId: string
+    participantIds: string[]
+    split?: SplitMode
+    shares?: Record<string, number>
+  }
+) {
+  const profile = store.profiles.find((item) => item.id === input.profileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const group = requireGroup(store, input.groupId)
+  requireSeated(group, profile.id)
+  const expense = group.expenses.find((item) => item.id === input.expenseId)
+  if (!expense) throw new Error("Expense not found.")
+  if (!canVoid(group, input.profileId, expense.createdByProfileId)) {
+    throw new Error("Only the author or trip opener can edit this spend.")
+  }
+
+  const fields = validateExpenseInput(group, input)
+  const next: Group = {
+    ...group,
+    expenses: group.expenses.map((item) =>
+      item.id === expense.id
+        ? {
+            ...item,
+            ...fields,
+          }
+        : item
+    ),
+  }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+export function deleteExpense(
+  store: Store,
+  input: { groupId: string; expenseId: string; profileId: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  const expense = group.expenses.find((item) => item.id === input.expenseId)
+  if (!expense) throw new Error("Expense not found.")
+  if (!canVoid(group, input.profileId, expense.createdByProfileId)) {
+    throw new Error("Only the author or trip opener can delete this spend.")
+  }
+  const next: Group = {
+    ...group,
+    expenses: group.expenses.filter((item) => item.id !== expense.id),
+  }
   return { store: replaceGroup(store, next), group: next }
 }
 

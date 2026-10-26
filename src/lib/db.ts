@@ -163,7 +163,9 @@ async function writeGithub(store: Store, sha?: string) {
     owner: config.owner,
     repo: config.repo,
     path: config.filePath,
-    message: sha ? "waybill: update trip ledger" : "waybill: create trip ledger",
+    message: sha
+      ? "Trip Expenses Balancer: update trip ledger"
+      : "Trip Expenses Balancer: create trip ledger",
     content: Buffer.from(`${JSON.stringify(store, null, 2)}\n`).toString("base64"),
     branch: config.branch,
     ...(sha ? { sha } : {}),
@@ -186,12 +188,12 @@ export async function readStore() {
   return enqueue(async () => (await load()).store)
 }
 
-export async function updateStore<T>(mutator: (store: Store) => T) {
+export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) {
   return enqueue(async () => {
     let lastError: unknown
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const loaded = await load()
-      const result = mutator(loaded.store)
+      const result = await mutator(loaded.store)
       const next =
         result && typeof result === "object" && "store" in result
           ? (result as { store: Store }).store

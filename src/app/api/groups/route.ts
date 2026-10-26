@@ -31,6 +31,8 @@ export async function POST(request: Request) {
     const body = await readBody<{
       name?: string
       currency?: string
+      startDate?: string | null
+      endDate?: string | null
       memberNames?: string[]
       createdByProfileId?: string
     }>(request)
@@ -38,6 +40,8 @@ export async function POST(request: Request) {
       createGroup(store, {
         name: body.name ?? "",
         currency: body.currency,
+        startDate: body.startDate,
+        endDate: body.endDate,
         memberNames: body.memberNames ?? [],
         createdByProfileId: body.createdByProfileId ?? "",
       })

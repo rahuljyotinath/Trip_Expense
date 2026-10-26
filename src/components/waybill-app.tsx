@@ -7,10 +7,11 @@ import {
   ArrowRight,
   Banknote,
   Check,
-  Copy,
   Link2,
+  Pencil,
   Plus,
   Receipt,
+  Trash2,
   Users,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -39,30 +40,34 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
-  clearSavedProfile,
-  createUserProfile,
   fetchGroup,
   fetchGroupByCode,
   fetchMyGroups,
-  fetchProfile,
   inviteName,
   loadHealth,
-  loadSavedProfile,
-  crossExpense,
+  logoutUser,
   crossPayment,
+  fetchSessionProfile,
+  logInUser,
+  signUpUser,
   openTrip,
+  patchExpense,
   recordPayment,
+  removeExpense,
   saveExpense,
+  updateTripDetails,
   type Health,
 } from "@/lib/client-api"
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
 import { netBalances, simplifyDebts } from "@/lib/settle"
-import { evenPercents, shareTotal, sharesComplete } from "@/lib/shares"
-import type { Group, Profile, SplitMode } from "@/lib/types"
+import { parseJoinInput } from "@/lib/join"
+import { tripStats } from "@/lib/stats"
+import type { Expense, Group, PublicProfile } from "@/lib/types"
 
-type Screen = "boot" | "name" | "home" | "create" | "join" | "trip"
+type Screen = "boot" | "auth" | "home" | "create" | "join" | "trip"
+type AuthMode = "login" | "signup"
 
 function memberName(group: Group, id: string) {
   return group.members.find((member) => member.id === id)?.name ?? "Unknown"
@@ -82,6 +87,27 @@ function formatDay(date: string) {
   })
 }
 
+function formatTripDates(group: Group) {
+  const { startDate, endDate } = group
+  if (!startDate && !endDate) return null
+  if (startDate && endDate) {
+    const start = new Date(`${startDate}T00:00:00`)
+    const end = new Date(`${endDate}T00:00:00`)
+    const sameYear =
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      start.getFullYear() === end.getFullYear()
+    const startLabel = start.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      ...(sameYear ? {} : { year: "numeric" }),
+    })
+    return `${startLabel} – ${formatDay(endDate)}`
+  }
+  if (startDate) return `From ${formatDay(startDate)}`
+  return `Until ${formatDay(endDate!)}`
+}
+
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
 }
@@ -92,15 +118,20 @@ export function WaybillApp() {
 
   const [screen, setScreen] = useState<Screen>("boot")
   const [health, setHealth] = useState<Health | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
   const [group, setGroup] = useState<Group | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const [name, setName] = useState("")
+  const [authMode, setAuthMode] = useState<AuthMode>("login")
+  const [authUsername, setAuthUsername] = useState("")
+  const [authPassword, setAuthPassword] = useState("")
+  const [authDisplayName, setAuthDisplayName] = useState("")
   const [tripName, setTripName] = useState("")
   const [currency, setCurrency] = useState("INR")
+  const [tripStartDate, setTripStartDate] = useState("")
+  const [tripEndDate, setTripEndDate] = useState("")
   const [people, setPeople] = useState<string[]>([])
   const [personDraft, setPersonDraft] = useState("")
   const [code, setCode] = useState(joinFromUrl)
@@ -111,7 +142,7 @@ export function WaybillApp() {
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  async function refreshGroups(nextProfile: Profile) {
+  async function refreshGroups(nextProfile: PublicProfile) {
     const list = await fetchMyGroups(nextProfile.id)
     setGroups(list)
     return list
@@ -124,30 +155,24 @@ export function WaybillApp() {
         const nextHealth = await loadHealth()
         if (cancelled) return
         setHealth(nextHealth)
-        const saved = loadSavedProfile()
-        if (!saved) {
-          setScreen("name")
+        const session = await fetchSessionProfile()
+        if (!session?.username) {
+          setScreen("auth")
           return
         }
-        try {
-          const verified = await fetchProfile(saved.id)
-          if (cancelled) return
-          setProfile(verified)
-          await refreshGroups(verified)
-          if (joinFromUrl) {
-            setCode(joinFromUrl)
-            setScreen("join")
-            return
-          }
-          setScreen("home")
-        } catch {
-          clearSavedProfile()
-          if (!cancelled) setScreen("name")
+        if (cancelled) return
+        setProfile(session)
+        await refreshGroups(session)
+        if (joinFromUrl) {
+          setCode(joinFromUrl)
+          setScreen("join")
+          return
         }
+        setScreen("home")
       } catch (err) {
         if (!cancelled) {
           setError(errorText(err))
-          setScreen("name")
+          setScreen("auth")
         }
       }
     })()
@@ -156,14 +181,41 @@ export function WaybillApp() {
     }
   }, [joinFromUrl])
 
-  async function onCreateProfile() {
+  async function onAuthSubmit() {
     setBusy(true)
     setError(null)
     try {
-      const next = await createUserProfile(name)
+      const next =
+        authMode === "signup"
+          ? await signUpUser({
+              username: authUsername,
+              password: authPassword,
+              name: authDisplayName.trim() || undefined,
+            })
+          : await logInUser({
+              username: authUsername,
+              password: authPassword,
+            })
       setProfile(next)
+      setAuthPassword("")
       await refreshGroups(next)
       setScreen(joinFromUrl || code ? "join" : "home")
+    } catch (err) {
+      setError(errorText(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onLogout() {
+    setBusy(true)
+    setError(null)
+    try {
+      await logoutUser()
+      setProfile(null)
+      setGroup(null)
+      setGroups([])
+      setScreen("auth")
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -206,11 +258,15 @@ export function WaybillApp() {
         memberNames,
         createdByProfileId: profile.id,
         currency,
+        startDate: tripStartDate.trim() || null,
+        endDate: tripEndDate.trim() || null,
       })
       setGroup(next)
       await refreshGroups(profile)
       setScreen("trip")
       setTripName("")
+      setTripStartDate("")
+      setTripEndDate("")
       setPeople([])
       setPersonDraft("")
     } catch (err) {
@@ -224,7 +280,7 @@ export function WaybillApp() {
     setBusy(true)
     setError(null)
     try {
-      const next = await fetchGroupByCode(code)
+      const next = await fetchGroupByCode(parseJoinInput(code))
       setJoinGroup(next)
     } catch (err) {
       setJoinGroup(null)
@@ -283,11 +339,16 @@ export function WaybillApp() {
     <Shell
       health={health}
       profile={profile}
-      onHome={() => {
-        setScreen("home")
-        setGroup(null)
-        setError(null)
-      }}
+      onLogout={profile ? onLogout : undefined}
+      onHome={
+        screen === "trip"
+          ? () => {
+              setScreen("home")
+              setGroup(null)
+              setError(null)
+            }
+          : undefined
+      }
     >
       {error ? (
         <Alert variant="destructive" className="mb-4">
@@ -297,12 +358,18 @@ export function WaybillApp() {
         </Alert>
       ) : null}
 
-      {screen === "name" ? (
-        <NameGate
-          name={name}
+      {screen === "auth" ? (
+        <AuthGate
+          mode={authMode}
+          username={authUsername}
+          password={authPassword}
+          displayName={authDisplayName}
           busy={busy}
-          onName={setName}
-          onSubmit={onCreateProfile}
+          onMode={setAuthMode}
+          onUsername={setAuthUsername}
+          onPassword={setAuthPassword}
+          onDisplayName={setAuthDisplayName}
+          onSubmit={onAuthSubmit}
         />
       ) : null}
 
@@ -330,11 +397,15 @@ export function WaybillApp() {
           profile={profile}
           tripName={tripName}
           currency={currency}
+          startDate={tripStartDate}
+          endDate={tripEndDate}
           people={people}
           personDraft={personDraft}
           busy={busy}
           onTripName={setTripName}
           onCurrency={setCurrency}
+          onStartDate={setTripStartDate}
+          onEndDate={setTripEndDate}
           onDraft={setPersonDraft}
           onAddPerson={addPerson}
           onRemovePerson={(value) =>
@@ -390,11 +461,13 @@ function Shell({
   health,
   profile,
   onHome,
+  onLogout,
 }: {
   children: React.ReactNode
   health: Health | null
-  profile: Profile | null
+  profile: PublicProfile | null
   onHome?: () => void
+  onLogout?: () => void
 }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10">
@@ -408,36 +481,24 @@ function Shell({
           <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
             Group ledger
           </p>
-          <h1 className="font-heading text-4xl tracking-tight sm:text-5xl">Waybill</h1>
+          <h1 className="font-heading text-4xl tracking-tight sm:text-5xl sm:text-[2.75rem]">
+            Trip Expenses Balancer
+          </h1>
         </button>
         <div className="text-right text-sm">
           {profile ? (
-            <p className="font-medium">{profile.name}</p>
+            <>
+              <p className="font-medium">{profile.name}</p>
+              <p className="text-xs text-muted-foreground">@{profile.username}</p>
+              {onLogout ? (
+                <Button variant="link" className="h-auto px-0 text-xs" onClick={onLogout}>
+                  Sign out
+                </Button>
+              ) : null}
+            </>
           ) : (
-            <p className="text-muted-foreground">No seat yet</p>
+            <p className="text-muted-foreground">Not signed in</p>
           )}
-          <p className="font-mono text-[11px] text-muted-foreground uppercase">
-            {health?.connected
-              ? "GitHub connected"
-              : health?.mode === "local"
-                ? "Local file"
-                : health?.mode === "unconfigured"
-                  ? "This browser"
-                  : health?.mode === "github"
-                    ? "GitHub"
-                    : "…"}
-          </p>
-          {health?.repo ? (
-            <a
-              href={health.githubUrl ?? `https://github.com/${health.repo}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-0.5 inline-flex items-center justify-end gap-1 font-mono text-[11px] text-muted-foreground uppercase hover:text-foreground"
-            >
-              <Link2 className="size-3" />
-              {health.repo}
-            </a>
-          ) : null}
         </div>
       </header>
       {health?.warning ? (
@@ -452,42 +513,97 @@ function Shell({
   )
 }
 
-function NameGate({
-  name,
+function AuthGate({
+  mode,
+  username,
+  password,
+  displayName,
   busy,
-  onName,
+  onMode,
+  onUsername,
+  onPassword,
+  onDisplayName,
   onSubmit,
 }: {
-  name: string
+  mode: AuthMode
+  username: string
+  password: string
+  displayName: string
   busy: boolean
-  onName: (value: string) => void
+  onMode: (value: AuthMode) => void
+  onUsername: (value: string) => void
+  onPassword: (value: string) => void
+  onDisplayName: (value: string) => void
   onSubmit: () => void
 }) {
+  const canSubmit =
+    username.trim().length > 0 && password.length >= 8
+
   return (
     <Card className="max-w-xl">
       <CardHeader>
-        <CardTitle className="font-heading text-3xl">What should we call you?</CardTitle>
+        <CardTitle className="font-heading text-3xl">
+          {mode === "login" ? "Sign in" : "Create account"}
+        </CardTitle>
         <CardDescription>
-          This is your seat. Later you match it to a name on a trip. No password.
-          The browser remembers you.
+          Username and password only — no email or SMS required.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={mode === "login" ? "default" : "outline"}
+            onClick={() => onMode("login")}
+          >
+            Sign in
+          </Button>
+          <Button
+            type="button"
+            variant={mode === "signup" ? "default" : "outline"}
+            onClick={() => onMode("signup")}
+          >
+            Sign up
+          </Button>
+        </div>
         <div className="space-y-2">
-          <Label htmlFor="profile-name">Your name</Label>
+          <Label htmlFor="auth-username">Username</Label>
           <Input
-            id="profile-name"
-            value={name}
+            id="auth-username"
             autoFocus
-            placeholder="Priya Sharma"
-            onChange={(event) => onName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") onSubmit()
-            }}
+            value={username}
+            autoComplete="username"
+            placeholder="priya_k"
+            onChange={(event) => onUsername(event.target.value)}
           />
         </div>
-        <Button disabled={busy || !name.trim()} onClick={onSubmit} size="lg">
-          Sit down <ArrowRight />
+        <div className="space-y-2">
+          <Label htmlFor="auth-password">Password</Label>
+          <Input
+            id="auth-password"
+            type="password"
+            value={password}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            onChange={(event) => onPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && canSubmit) onSubmit()
+            }}
+          />
+          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+        </div>
+        {mode === "signup" ? (
+          <div className="space-y-2">
+            <Label htmlFor="auth-display">Display name (optional)</Label>
+            <Input
+              id="auth-display"
+              value={displayName}
+              placeholder="Priya Sharma"
+              onChange={(event) => onDisplayName(event.target.value)}
+            />
+          </div>
+        ) : null}
+        <Button disabled={busy || !canSubmit} onClick={onSubmit} size="lg">
+          {mode === "login" ? "Sign in" : "Create account"} <ArrowRight />
         </Button>
       </CardContent>
     </Card>
@@ -502,7 +618,7 @@ function Home({
   onJoin,
   onOpen,
 }: {
-  profile: Profile
+  profile: PublicProfile
   groups: Group[]
   busy: boolean
   onCreate: () => void
@@ -523,7 +639,7 @@ function Home({
           Open a trip
         </Button>
         <Button size="lg" variant="outline" onClick={onJoin}>
-          I have a code
+          Join with a link
         </Button>
       </div>
       <Separator />
@@ -540,7 +656,6 @@ function Home({
               className="rounded-xl bg-card p-4 text-left ring-1 ring-foreground/10 transition hover:ring-foreground/30"
             >
               <p className="font-heading text-2xl">{item.name}</p>
-              <p className="mt-1 font-mono text-xs tracking-widest">{item.code}</p>
               <p className="mt-3 text-sm text-muted-foreground">
                 {item.members.length} people · {item.expenses.length} spends
               </p>
@@ -558,8 +673,8 @@ function EmptyTrips() {
       <CardHeader>
         <CardTitle>No trips on this seat</CardTitle>
         <CardDescription>
-          Open one and list every person who will spend. Or take a six-letter
-          code from whoever already did.
+          Open one and list every person who will spend. Or ask for the invite
+          link from whoever already did.
         </CardDescription>
       </CardHeader>
     </Card>
@@ -570,25 +685,33 @@ function CreateTrip({
   profile,
   tripName,
   currency,
+  startDate,
+  endDate,
   people,
   personDraft,
   busy,
   onTripName,
   onCurrency,
+  onStartDate,
+  onEndDate,
   onDraft,
   onAddPerson,
   onRemovePerson,
   onBack,
   onSubmit,
 }: {
-  profile: Profile
+  profile: PublicProfile
   tripName: string
   currency: string
+  startDate: string
+  endDate: string
   people: string[]
   personDraft: string
   busy: boolean
   onTripName: (value: string) => void
   onCurrency: (value: string) => void
+  onStartDate: (value: string) => void
+  onEndDate: (value: string) => void
   onDraft: (value: string) => void
   onAddPerson: () => void
   onRemovePerson: (value: string) => void
@@ -637,6 +760,26 @@ function CreateTrip({
                 {item}
               </Button>
             ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="trip-start">Start (optional)</Label>
+            <Input
+              id="trip-start"
+              type="date"
+              value={startDate}
+              onChange={(event) => onStartDate(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="trip-end">End (optional)</Label>
+            <Input
+              id="trip-end"
+              type="date"
+              value={endDate}
+              onChange={(event) => onEndDate(event.target.value)}
+            />
           </div>
         </div>
         <div className="space-y-2">
@@ -713,7 +856,7 @@ function JoinTrip({
   onClaim,
   onBack,
 }: {
-  profile: Profile
+  profile: PublicProfile
   code: string
   group: Group | null
   busy: boolean
@@ -729,17 +872,17 @@ function JoinTrip({
       <CardHeader>
         <CardTitle className="font-heading text-3xl">Walk into a trip.</CardTitle>
         <CardDescription>
-          Six letters. Then pick the name that is you. If they spelled you
-          wrong, still pick the closest seat — that is the match.
+          Paste the invite link someone sent you. Then pick the name that is
+          you. If they spelled you wrong, still pick the closest seat — that is
+          the match.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">
           <Input
             value={code}
-            placeholder="K7MP2Q"
-            className="font-mono uppercase tracking-[0.3em]"
-            onChange={(event) => onCode(event.target.value.toUpperCase())}
+            placeholder="https://…/?join=…"
+            onChange={(event) => onCode(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") onLookup()
             }}
@@ -792,6 +935,75 @@ function JoinTrip({
   )
 }
 
+function TripSummaryStrip({
+  group,
+  seatId,
+}: {
+  group: Group
+  seatId: string | null
+}) {
+  const stats = useMemo(() => tripStats(group), [group])
+  const mine = seatId ? stats.byMember[seatId] : null
+  const net = mine?.net ?? 0
+  const balance =
+    Math.abs(net) < 0.02
+      ? { label: "Balance", text: "Even", className: "text-muted-foreground" }
+      : net < 0
+        ? {
+            label: "You owe",
+            text: formatMoney(Math.abs(net), group.currency),
+            className: "text-stamp",
+          }
+        : {
+            label: "You're owed",
+            text: formatMoney(net, group.currency),
+            className: "text-moss",
+          }
+
+  return (
+    <div className="rounded-xl border bg-card/50 px-4 py-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+            Trip spend
+          </p>
+          <p className="font-heading text-xl">{formatMoney(stats.totalSpend, group.currency)}</p>
+        </div>
+        {seatId && mine ? (
+          <>
+            <div>
+              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                Your share
+              </p>
+              <p className="font-heading text-xl">
+                {formatMoney(mine.share, group.currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                You paid
+              </p>
+              <p className="font-heading text-xl">
+                {formatMoney(mine.paid, group.currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                {balance.label}
+              </p>
+              <p className={`font-heading text-xl ${balance.className}`}>{balance.text}</p>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground sm:col-span-3">
+            Claim a nickname to see your share, what you paid, and your balance.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function TripDesk({
   profile,
   group,
@@ -809,7 +1021,7 @@ function TripDesk({
   onError,
   onBusy,
 }: {
-  profile: Profile
+  profile: PublicProfile
   group: Group
   busy: boolean
   copied: boolean
@@ -826,10 +1038,32 @@ function TripDesk({
   onBusy: (value: boolean) => void
 }) {
   const seat = mySeat(group, profile.id)
+  const isOpener = group.createdByProfileId === profile.id
   const balances = useMemo(() => netBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
+  const ledgerExpenses = useMemo(
+    () =>
+      group.expenses
+        .filter((item) => !item.voidedAt)
+        .sort((a, b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date)
+          return b.createdAt.localeCompare(a.createdAt)
+        }),
+    [group.expenses]
+  )
+  const tripDates = formatTripDates(group)
+  const [tripEditOpen, setTripEditOpen] = useState(false)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
   const shareUrl =
     typeof window === "undefined" ? "" : `${window.location.origin}/?join=${group.code}`
+
+  useEffect(() => {
+    document.title = `${group.name} — Trip Expenses Balancer`
+    return () => {
+      document.title = "Trip Expenses Balancer"
+    }
+  }, [group.name])
 
   return (
     <div className="space-y-6">
@@ -839,19 +1073,41 @@ function TripDesk({
             Trip
           </p>
           <h2 className="font-heading text-4xl">{group.name}</h2>
+          {tripDates ? (
+            <p className="mt-1 text-sm text-muted-foreground">{tripDates}</p>
+          ) : null}
           <p className="mt-1 text-sm text-muted-foreground">
             {seat
-              ? `You are seated as ${seat.name}.`
+              ? `On the roster as ${seat.name}.`
               : "You can look, but claim a name before logging spends."}
           </p>
+          {isOpener ? (
+            <Button
+              variant="link"
+              className="h-auto p-0 text-sm"
+              onClick={() => setTripEditOpen(true)}
+            >
+              Edit trip details
+            </Button>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => onCopy(group.code)}>
-            {copied ? <Check /> : <Copy />}
-            {group.code}
-          </Button>
-          <Button variant="outline" onClick={() => onCopy(shareUrl)}>
-            <Link2 /> Share
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (typeof navigator !== "undefined" && navigator.share && shareUrl) {
+                try {
+                  await navigator.share({ title: group.name, url: shareUrl })
+                  return
+                } catch {
+                  /* cancelled or unsupported */
+                }
+              }
+              onCopy(shareUrl)
+            }}
+          >
+            {copied ? <Check /> : <Link2 />}
+            {copied ? "Link copied" : "Copy invite link"}
           </Button>
           <Button
             variant="outline"
@@ -860,13 +1116,21 @@ function TripDesk({
           >
             <Banknote /> Paid back
           </Button>
-          <Button onClick={() => onExpenseOpen(true)} disabled={!seat}>
+          <Button
+            onClick={() => {
+              setEditingExpense(null)
+              onExpenseOpen(true)
+            }}
+            disabled={!seat}
+          >
             <Receipt /> Add spend
           </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="settle">
+      <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
+
+      <Tabs defaultValue="ledger">
         <TabsList>
           <TabsTrigger value="settle">Settle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
@@ -879,7 +1143,7 @@ function TripDesk({
                 <CardTitle>Books are even</CardTitle>
                 <CardDescription>
                   {group.expenses.every((item) => item.voidedAt)
-                    ? "No live spends. First dinner, or uncross a line."
+                    ? "No spends yet. Log the first one from the ledger tab."
                     : "Everyone is square on the current ledger."}
                 </CardDescription>
               </CardHeader>
@@ -1008,81 +1272,70 @@ function TripDesk({
           </div>
         </TabsContent>
         <TabsContent value="ledger" className="space-y-3 pt-4">
-          {group.expenses.length === 0 ? (
+          {ledgerExpenses.length === 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle>Blank page</CardTitle>
                 <CardDescription>
-                  Date, amount, reason, who is on the bill. One person or
-                  everyone.
+                  Date, amount, reason, who is on the bill. Split equally among
+                  everyone you check.
                 </CardDescription>
               </CardHeader>
             </Card>
           ) : (
-            group.expenses.map((expense) => {
-              const crossed = Boolean(expense.voidedAt)
+            ledgerExpenses.map((expense) => {
               const canEdit =
                 expense.createdByProfileId === profile.id ||
                 group.createdByProfileId === profile.id
               return (
-              <Card key={expense.id} className={crossed ? "opacity-70" : ""}>
-                <CardHeader className="flex-row items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className={crossed ? "line-through" : ""}>
-                      {expense.reason}
-                    </CardTitle>
-                    <CardDescription className={crossed ? "line-through" : ""}>
-                      {formatDay(expense.date)} · paid by{" "}
-                      {memberName(group, expense.paidByMemberId)}
-                      {expense.split === "percent" ? " · percent" : " · equal"}
-                    </CardDescription>
+                <div
+                  key={expense.id}
+                  className="flex flex-col gap-2 rounded-lg border px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium leading-snug">{expense.reason}</p>
+                      <p className="font-heading shrink-0 text-xl sm:hidden">
+                        {formatMoney(expense.amount, group.currency)}
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDay(expense.date)} · Paid by{" "}
+                      {memberName(group, expense.paidByMemberId)} · Split:{" "}
+                      {expense.participantIds.map((id) => memberName(group, id)).join(", ")}
+                    </p>
                   </div>
-                  <p className={`font-heading text-2xl ${crossed ? "line-through" : ""}`}>
-                    {formatMoney(expense.amount, group.currency)}
-                  </p>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between gap-3">
-                  <p className={`text-sm text-muted-foreground ${crossed ? "line-through" : ""}`}>
-                    {expense.split === "percent"
-                      ? expense.participantIds
-                          .map(
-                            (id) =>
-                              `${expense.shares[id] ?? 0}% ${memberName(group, id)}`
-                          )
-                          .join(" · ")
-                      : expense.participantIds
-                          .map((id) => memberName(group, id))
-                          .join(", ")}
-                  </p>
-                  {canEdit ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy}
-                      onClick={async () => {
-                        onBusy(true)
-                        onError(null)
-                        try {
-                          onGroup(
-                            await crossExpense(
-                              group.id,
-                              expense.id,
-                              profile.id,
-                              crossed
-                            )
-                          )
-                        } catch (err) {
-                          onError(errorText(err))
-                        } finally {
-                          onBusy(false)
-                        }
-                      }}
-                    >
-                      {crossed ? "Count again" : "Cross out"}
-                    </Button>
-                  ) : null}
-                </CardContent>
-              </Card>
+                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
+                    <p className="hidden font-heading text-2xl sm:block">
+                      {formatMoney(expense.amount, group.currency)}
+                    </p>
+                    {canEdit ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => {
+                            setEditingExpense(expense)
+                            onExpenseOpen(true)
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => setDeleteExpenseTarget(expense)}
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
               )
             })
           )}
@@ -1110,15 +1363,81 @@ function TripDesk({
         </TabsContent>
       </Tabs>
 
-      <ExpenseDialog
-        open={expenseOpen}
+      <TripEditDialog
+        open={tripEditOpen}
         group={group}
         profile={profile}
         busy={busy}
-        onOpen={onExpenseOpen}
+        onOpen={setTripEditOpen}
+        onSaved={(next) => {
+          onGroup(next)
+          setTripEditOpen(false)
+        }}
+        onError={onError}
+        onBusy={onBusy}
+      />
+      <Dialog
+        open={Boolean(deleteExpenseTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteExpenseTarget(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove this spend?</DialogTitle>
+            <DialogDescription>
+              {deleteExpenseTarget
+                ? `“${deleteExpenseTarget.reason}” will be removed from the trip ledger.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteExpenseTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy || !deleteExpenseTarget}
+              onClick={async () => {
+                if (!deleteExpenseTarget) return
+                onBusy(true)
+                onError(null)
+                try {
+                  onGroup(
+                    await removeExpense(
+                      group.id,
+                      deleteExpenseTarget.id,
+                      profile.id
+                    )
+                  )
+                  setDeleteExpenseTarget(null)
+                  await onRefresh()
+                } catch (err) {
+                  onError(errorText(err))
+                } finally {
+                  onBusy(false)
+                }
+              }}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ExpenseDialog
+        open={expenseOpen}
+        expense={editingExpense}
+        group={group}
+        profile={profile}
+        busy={busy}
+        onOpen={(open) => {
+          onExpenseOpen(open)
+          if (!open) setEditingExpense(null)
+        }}
         onSaved={async (next) => {
           onGroup(next)
           onExpenseOpen(false)
+          setEditingExpense(null)
           await onRefresh()
         }}
         onError={onError}
@@ -1153,7 +1472,7 @@ function TripDesk({
   )
 }
 
-function ExpenseDialog({
+function TripEditDialog({
   open,
   group,
   profile,
@@ -1165,7 +1484,129 @@ function ExpenseDialog({
 }: {
   open: boolean
   group: Group
-  profile: Profile
+  profile: PublicProfile
+  busy: boolean
+  onOpen: (open: boolean) => void
+  onSaved: (group: Group) => void
+  onError: (message: string | null) => void
+  onBusy: (value: boolean) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpen}>
+      {open ? (
+        <TripEditForm
+          key={`${group.id}-${group.name}-${group.startDate ?? ""}-${group.endDate ?? ""}`}
+          group={group}
+          profile={profile}
+          busy={busy}
+          onSaved={onSaved}
+          onError={onError}
+          onBusy={onBusy}
+        />
+      ) : null}
+    </Dialog>
+  )
+}
+
+function TripEditForm({
+  group,
+  profile,
+  busy,
+  onSaved,
+  onError,
+  onBusy,
+}: {
+  group: Group
+  profile: PublicProfile
+  busy: boolean
+  onSaved: (group: Group) => void
+  onError: (message: string | null) => void
+  onBusy: (value: boolean) => void
+}) {
+  const [name, setName] = useState(group.name)
+  const [startDate, setStartDate] = useState(group.startDate ?? "")
+  const [endDate, setEndDate] = useState(group.endDate ?? "")
+
+  return (
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit trip details</DialogTitle>
+          <DialogDescription>Name and dates — currency stays as set when the trip opened.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-trip-name">Trip name</Label>
+            <Input
+              id="edit-trip-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-start">Start</Label>
+              <Input
+                id="edit-start"
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-end">End</Label>
+              <Input
+                id="edit-end"
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={busy}
+            onClick={async () => {
+              onBusy(true)
+              onError(null)
+              try {
+                onSaved(
+                  await updateTripDetails(group.id, {
+                    profileId: profile.id,
+                    name: name.trim(),
+                    startDate: startDate.trim() || null,
+                    endDate: endDate.trim() || null,
+                  })
+                )
+              } catch (err) {
+                onError(errorText(err))
+              } finally {
+                onBusy(false)
+              }
+            }}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+  )
+}
+
+function ExpenseDialog({
+  open,
+  expense,
+  group,
+  profile,
+  busy,
+  onOpen,
+  onSaved,
+  onError,
+  onBusy,
+}: {
+  open: boolean
+  expense: Expense | null
+  group: Group
+  profile: PublicProfile
   busy: boolean
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => Promise<void> | void
@@ -1176,6 +1617,8 @@ function ExpenseDialog({
     <Dialog open={open} onOpenChange={onOpen}>
       {open ? (
         <ExpenseForm
+          key={expense?.id ?? "new"}
+          expense={expense}
           group={group}
           profile={profile}
           busy={busy}
@@ -1191,50 +1634,47 @@ function ExpenseDialog({
 function ExpenseForm({
   group,
   profile,
+  expense,
   busy,
   onSaved,
   onError,
   onBusy,
 }: {
   group: Group
-  profile: Profile
+  profile: PublicProfile
+  expense: Expense | null
   busy: boolean
   onSaved: (group: Group) => Promise<void> | void
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
   const seat = mySeat(group, profile.id)
-  const [date, setDate] = useState(todayIsoDate())
-  const [amount, setAmount] = useState("")
-  const [reason, setReason] = useState("")
-  const [paidBy, setPaidBy] = useState(seat?.id ?? group.members[0]?.id ?? "")
+  const isEdit = Boolean(expense)
+  const [date, setDate] = useState(expense?.date ?? todayIsoDate())
+  const [amount, setAmount] = useState(expense ? String(expense.amount) : "")
+  const [reason, setReason] = useState(expense?.reason ?? "")
+  const [paidBy, setPaidBy] = useState(
+    expense?.paidByMemberId ?? seat?.id ?? group.members[0]?.id ?? ""
+  )
   const [participants, setParticipants] = useState<string[]>(
-    group.members.map((member) => member.id)
+    expense?.participantIds ?? group.members.map((member) => member.id)
   )
-  const [split, setSplit] = useState<SplitMode>("equal")
-  const [shares, setShares] = useState<Record<string, number>>(
-    evenPercents(group.members.map((member) => member.id))
-  )
-
-  function setPeople(next: string[]) {
-    setParticipants(next)
-    setShares(evenPercents(next))
-  }
 
   function toggle(id: string, checked: boolean) {
-    const next = checked
-      ? [...new Set([...participants, id])]
-      : participants.filter((item) => item !== id)
-    setPeople(next)
+    setParticipants(
+      checked
+        ? [...new Set([...participants, id])]
+        : participants.filter((item) => item !== id)
+    )
   }
 
   return (
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Log a spend</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit spend" : "Log a spend"}</DialogTitle>
           <DialogDescription>
-            Uncheck anyone who was not on this bill. Equal split or percents
-            that add to 100.
+            Uncheck anyone who was not on this bill. The amount splits equally
+            among everyone checked.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -1289,7 +1729,7 @@ function ExpenseForm({
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  setPeople(
+                  setParticipants(
                     participants.length === group.members.length
                       ? [paidBy]
                       : group.members.map((member) => member.id)
@@ -1297,26 +1737,6 @@ function ExpenseForm({
                 }
               >
                 {participants.length === group.members.length ? "Only payer" : "Everyone"}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={split === "equal" ? "default" : "outline"}
-                onClick={() => {
-                  setSplit("equal")
-                  setShares(evenPercents(participants))
-                }}
-              >
-                Equal
-              </Button>
-              <Button
-                variant={split === "percent" ? "default" : "outline"}
-                onClick={() => {
-                  setSplit("percent")
-                  setShares(evenPercents(participants))
-                }}
-              >
-                Percent
               </Button>
             </div>
             <div className="space-y-2">
@@ -1327,34 +1747,9 @@ function ExpenseForm({
                     onCheckedChange={(value) => toggle(member.id, value === true)}
                   />
                   <span className="flex-1">{member.name}</span>
-                  {split === "percent" && participants.includes(member.id) ? (
-                    <Input
-                      className="h-7 w-20"
-                      inputMode="decimal"
-                      value={shares[member.id] ?? ""}
-                      onChange={(event) =>
-                        setShares((current) => ({
-                          ...current,
-                          [member.id]: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  ) : null}
                 </label>
               ))}
             </div>
-            {split === "percent" ? (
-              <p
-                className={`text-xs ${
-                  sharesComplete(participants, shares)
-                    ? "text-moss"
-                    : "text-stamp"
-                }`}
-              >
-                {shareTotal(participants, shares) / 100}% total
-                {sharesComplete(participants, shares) ? "" : " — must be 100"}
-              </p>
-            ) : null}
           </div>
         </div>
         <DialogFooter>
@@ -1369,20 +1764,23 @@ function ExpenseForm({
               onBusy(true)
               onError(null)
               try {
-                if (split === "percent" && !sharesComplete(participants, shares)) {
-                  onError("Percents must add to 100.")
-                  return
-                }
-                const next = await saveExpense(group.id, {
+                const payload = {
                   date,
                   amount: parsed,
                   reason,
                   paidByMemberId: paidBy,
                   participantIds: participants,
-                  split,
-                  shares: split === "percent" ? shares : {},
+                  split: "equal" as const,
+                  shares: {} as Record<string, number>,
                   profileId: profile.id,
-                })
+                }
+                const next =
+                  isEdit && expense
+                    ? await patchExpense(group.id, {
+                        ...payload,
+                        expenseId: expense.id,
+                      })
+                    : await saveExpense(group.id, payload)
                 await onSaved(next)
               } catch (err) {
                 onError(errorText(err))
@@ -1391,7 +1789,7 @@ function ExpenseForm({
               }
             }}
           >
-            Save spend
+            {isEdit ? "Save changes" : "Save spend"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1496,7 +1894,7 @@ function PaymentDialog({
 }: {
   open: boolean
   group: Group
-  profile: Profile
+  profile: PublicProfile
   busy: boolean
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => void
@@ -1528,7 +1926,7 @@ function PaymentForm({
   onBusy,
 }: {
   group: Group
-  profile: Profile
+  profile: PublicProfile
   busy: boolean
   onSaved: (group: Group) => void
   onError: (message: string | null) => void

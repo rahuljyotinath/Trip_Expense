@@ -19,7 +19,7 @@ const instrument = Instrument_Serif({
 })
 
 export const metadata: Metadata = {
-  title: "Waybill — group trip expenses",
+  title: "Trip Expenses Balancer",
   description:
     "Open a trip, seat the people, log who paid. Settlements live in a JSON file on GitHub.",
 }

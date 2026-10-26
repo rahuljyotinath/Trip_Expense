@@ -1,8 +1,14 @@
 export type Profile = {
   id: string
+  username: string
+  passwordHash: string
   name: string
+  email: string | null
+  phone: string | null
   createdAt: string
 }
+
+export type PublicProfile = Omit<Profile, "passwordHash">
 
 export type Member = {
   id: string
@@ -44,6 +50,8 @@ export type Group = {
   name: string
   code: string
   currency: string
+  startDate: string | null
+  endDate: string | null
   createdByProfileId: string
   createdAt: string
   members: Member[]
@@ -86,9 +94,33 @@ export function normalizePayment(payment: Payment): Payment {
   }
 }
 
+export function normalizeProfile(profile: Profile): Profile {
+  return {
+    ...profile,
+    username: profile.username ?? "",
+    passwordHash: profile.passwordHash ?? "",
+    email: profile.email ?? null,
+    phone: profile.phone ?? null,
+  }
+}
+
+export function publicProfile(profile: Profile): PublicProfile {
+  const normalized = normalizeProfile(profile)
+  return {
+    id: normalized.id,
+    username: normalized.username,
+    name: normalized.name,
+    email: normalized.email,
+    phone: normalized.phone,
+    createdAt: normalized.createdAt,
+  }
+}
+
 export function normalizeGroup(group: Group): Group {
   return {
     ...group,
+    startDate: group.startDate ?? null,
+    endDate: group.endDate ?? null,
     expenses: (group.expenses ?? []).map(normalizeExpense),
     payments: (group.payments ?? []).map(normalizePayment),
   }
@@ -96,7 +128,7 @@ export function normalizeGroup(group: Group): Group {
 
 export function normalizeStore(store: Store): Store {
   return {
-    profiles: store.profiles ?? [],
+    profiles: (store.profiles ?? []).map(normalizeProfile),
     groups: (store.groups ?? []).map(normalizeGroup),
   }
 }
