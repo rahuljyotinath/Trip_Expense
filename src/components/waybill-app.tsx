@@ -21,6 +21,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -1075,6 +1076,18 @@ function TripDesk({
         }),
     [group.expenses]
   )
+  const ledgerByDay = useMemo(() => {
+    const days: { date: string; expenses: Expense[] }[] = []
+    for (const expense of ledgerExpenses) {
+      const last = days[days.length - 1]
+      if (last?.date === expense.date) last.expenses.push(expense)
+      else days.push({ date: expense.date, expenses: [expense] })
+    }
+    return days.map((day) => ({
+      ...day,
+      total: day.expenses.reduce((sum, item) => sum + item.amount, 0),
+    }))
+  }, [ledgerExpenses])
   const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -1290,7 +1303,7 @@ function TripDesk({
             })}
           </div>
         </TabsContent>
-        <TabsContent value="ledger" className="space-y-3 pt-4">
+        <TabsContent value="ledger" className="space-y-6 pt-4">
           {ledgerExpenses.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1302,61 +1315,69 @@ function TripDesk({
               </CardHeader>
             </Card>
           ) : (
-            ledgerExpenses.map((expense) => {
-              const canEdit =
-                expense.createdByProfileId === profile.id ||
-                group.createdByProfileId === profile.id
-              return (
-                <div
-                  key={expense.id}
-                  className="flex flex-col gap-2 rounded-lg border px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
-                >
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="font-medium leading-snug">{expense.reason}</p>
-                      <p className="font-heading shrink-0 text-xl sm:hidden">
-                        {formatMoney(expense.amount, group.currency)}
-                      </p>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDay(expense.date)} · Paid by{" "}
-                      {memberName(group, expense.paidByMemberId)} · Split:{" "}
-                      {expense.participantIds.map((id) => memberName(group, id)).join(", ")}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
-                    <p className="hidden font-heading text-2xl sm:block">
-                      {formatMoney(expense.amount, group.currency)}
-                    </p>
-                    {canEdit ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingExpense(expense)
-                            onExpenseOpen(true)
-                          }}
-                        >
-                          <Pencil className="size-3.5" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => setDeleteExpenseTarget(expense)}
-                        >
-                          <Trash2 className="size-3.5" />
-                          Delete
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
+            ledgerByDay.map((day) => (
+              <section key={day.date} className="space-y-3">
+                <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b bg-background/95 py-2 backdrop-blur-sm">
+                  <h3 className="font-heading text-lg">{formatDay(day.date)}</h3>
+                  <p className="font-heading text-lg tabular-nums">
+                    {formatMoney(day.total, group.currency)}
+                  </p>
                 </div>
-              )
-            })
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {day.expenses.map((expense) => {
+                    const canEdit =
+                      expense.createdByProfileId === profile.id ||
+                      group.createdByProfileId === profile.id
+                    const splitLabel = expense.participantIds
+                      .map((id) => memberName(group, id))
+                      .join(", ")
+                    return (
+                      <Card key={expense.id} size="sm" className="flex flex-col">
+                        <CardContent className="flex flex-1 flex-col gap-2 pt-1">
+                          <p className="font-heading text-2xl leading-none tabular-nums sm:text-3xl">
+                            {formatMoney(expense.amount, group.currency)}
+                          </p>
+                          <Badge variant="secondary" className="w-fit text-sm">
+                            Paid by {memberName(group, expense.paidByMemberId)}
+                          </Badge>
+                          <p className="truncate font-medium leading-snug">
+                            {expense.reason}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Split: {splitLabel}
+                          </p>
+                        </CardContent>
+                        {canEdit ? (
+                          <CardFooter className="mt-auto gap-1 border-0 bg-transparent py-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Edit spend"
+                              onClick={() => {
+                                setEditingExpense(expense)
+                                onExpenseOpen(true)
+                              }}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              aria-label="Delete spend"
+                              onClick={() => setDeleteExpenseTarget(expense)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </CardFooter>
+                        ) : null}
+                      </Card>
+                    )
+                  })}
+                </div>
+              </section>
+            ))
           )}
         </TabsContent>
         <TabsContent value="people" className="space-y-3 pt-4">
