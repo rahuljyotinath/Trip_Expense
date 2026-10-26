@@ -25,8 +25,9 @@ function errorText(error: unknown) {
 export function TripPage() {
   const params = useParams()
   const router = useRouter()
-  const groupId = String(params.id ?? "")
-  const tripPath = `/trip/${groupId}`
+  const rawId = params.id
+  const groupId = Array.isArray(rawId) ? rawId[0] ?? "" : String(rawId ?? "")
+  const tripPath = groupId ? `/trip/${groupId}` : "/"
 
   const [health, setHealth] = useState<Health | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
@@ -40,16 +41,24 @@ export function TripPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!groupId) return
+
     let cancelled = false
+
     ;(async () => {
+      setLoading(true)
+      setError(null)
+      setGroup(null)
       try {
-        const [nextHealth, session, nextGroup] = await Promise.all([
-          loadHealth(),
+        const nextHealth = await loadHealth()
+        if (cancelled) return
+        setHealth(nextHealth)
+
+        const [session, nextGroup] = await Promise.all([
           fetchSessionProfile(),
           fetchGroup(groupId),
         ])
         if (cancelled) return
-        setHealth(nextHealth)
         if (session?.id && session.username) {
           if (profileNeedsSetup(session)) {
             router.replace(
@@ -59,6 +68,8 @@ export function TripPage() {
           }
           setProfile(session)
           syncProfileToLocalStore(session)
+        } else {
+          setProfile(null)
         }
         setGroup(nextGroup)
       } catch (err) {
