@@ -135,6 +135,26 @@
       ],
       "expenses": [
         {
+          "id": "e_7831c49013b64fb6",
+          "date": "2026-10-24",
+          "amount": 215,
+          "reason": "Metro Ticket - Airport to CP",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_121f1d7cb721753b",
+            "m_d344e4ba06d3a510"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:37:32.295Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_4ab07eec37383d5b",
           "date": "2026-10-23",
           "amount": 60,
