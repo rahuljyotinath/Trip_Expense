@@ -135,6 +135,27 @@
       ],
       "expenses": [
         {
+          "id": "e_ff5d499792633e7b",
+          "date": "2026-10-23",
+          "amount": 3178,
+          "reason": "Hotel O Goodwill Jammu",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_5c314a86d2cc9721",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:47:39.868Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_794f83bba843ce89",
           "date": "2026-10-22",
           "amount": 2901,
