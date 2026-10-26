@@ -33,6 +33,13 @@ export function storeWithTrip(store: Store, group: Group): Store {
   }
 }
 
+export function resolvePatchActor(
+  actor: PublicProfile | null | undefined,
+  saved: PublicProfile | null
+): PublicProfile | null {
+  return actor ?? saved
+}
+
 /** Store shape used for optimistic PATCH previews (GitHub mode: inject session profile). */
 export function preparePatchStore(
   store: Store,

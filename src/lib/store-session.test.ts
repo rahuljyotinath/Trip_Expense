@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { addExpense } from "./operations"
-import { preparePatchStore, upsertProfileInStore } from "./store-session"
+import {
+  preparePatchStore,
+  resolvePatchActor,
+  upsertProfileInStore,
+} from "./store-session"
 import { emptyStore, type Group, type PublicProfile } from "./types"
 
 const pub: PublicProfile = {
@@ -51,6 +55,19 @@ test("preparePatchStore allows addExpense without server profiles", () => {
     createdByProfileId: "p1",
   })
   assert.equal(next.expenses.length, 1)
+})
+
+test("resolvePatchActor prefers explicit actor over saved", () => {
+  const other: PublicProfile = { ...pub, id: "p2", username: "other" }
+  assert.equal(resolvePatchActor(pub, other)?.id, "p1")
+  assert.equal(resolvePatchActor(null, other)?.id, "p2")
+  assert.equal(resolvePatchActor(pub, null)?.id, "p1")
+})
+
+test("preparePatchStore with actor only matches add-expense profileId", () => {
+  const group = seatedGroup()
+  const store = preparePatchStore(emptyStore(), group, pub)
+  assert.equal(store.profiles.some((item) => item.id === pub.id), true)
 })
 
 test("preparePatchStore without session still fails addExpense", () => {

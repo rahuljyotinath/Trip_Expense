@@ -115,6 +115,7 @@ function errorText(error: unknown) {
 
 function applyGroupPatchOptimistic(input: {
   group: Group
+  profile: PublicProfile
   body: Record<string, unknown>
   onGroup: (next: Group) => void
   onError: (message: string | null) => void
@@ -122,7 +123,7 @@ function applyGroupPatchOptimistic(input: {
   onDone?: () => void
   refresh?: () => Promise<void>
 }) {
-  const { group, body, onGroup, onError, onBusy, onDone, refresh } = input
+  const { group, profile, body, onGroup, onError, onBusy, onDone, refresh } = input
   onBusy(true)
   onError(null)
   commitGroupPatch(group, body, {
@@ -140,7 +141,7 @@ function applyGroupPatchOptimistic(input: {
       void refresh?.()
     },
     fetchLatest: () => fetchGroup(group.id),
-  })
+  }, profile)
 }
 
 export function WaybillApp() {
@@ -229,6 +230,7 @@ export function WaybillApp() {
               password: authPassword,
             })
       setProfile(next)
+      syncProfileToLocalStore(next)
       setAuthPassword("")
       await refreshGroups(next)
       setScreen(joinFromUrl || code ? "join" : "home")
@@ -1284,6 +1286,7 @@ function TripDesk({
                         onClick={() => {
                           applyGroupPatchOptimistic({
                             group,
+                            profile,
                             body: {
                               action: "add-payment",
                               date: todayIsoDate(),
@@ -1336,6 +1339,7 @@ function TripDesk({
                         onClick={() => {
                           applyGroupPatchOptimistic({
                             group,
+                            profile,
                             body: {
                               action: "void-payment",
                               paymentId: payment.id,
@@ -1514,6 +1518,7 @@ function TripDesk({
                       const picked = event.target.value
                       applyGroupPatchOptimistic({
                         group,
+                        profile,
                         body: {
                           action: "cover-member",
                           memberId: member.id,
@@ -1586,6 +1591,7 @@ function TripDesk({
                 const csv = importCsvText
                 applyGroupPatchOptimistic({
                   group,
+                  profile,
                   body: {
                     action: "import-trip-csv",
                     csv,
@@ -1631,6 +1637,7 @@ function TripDesk({
                 const expenseId = deleteExpenseTarget.id
                 applyGroupPatchOptimistic({
                   group,
+                  profile,
                   body: {
                     action: "delete-expense",
                     expenseId,
@@ -1671,6 +1678,7 @@ function TripDesk({
       <MemberDialog
         open={memberOpen}
         group={group}
+        profile={profile}
         busy={busy}
         onOpen={onMemberOpen}
         onSaved={(next) => {
@@ -1796,6 +1804,7 @@ function TripEditForm({
             onClick={() => {
               applyGroupPatchOptimistic({
                 group,
+                profile,
                 body: {
                   action: "update-group",
                   profileId: profile.id,
@@ -2007,6 +2016,7 @@ function ExpenseForm({
               }
               applyGroupPatchOptimistic({
                 group,
+                profile,
                 body:
                   isEdit && expense
                     ? {
@@ -2033,6 +2043,7 @@ function ExpenseForm({
 function MemberDialog({
   open,
   group,
+  profile,
   busy,
   onOpen,
   onSaved,
@@ -2042,6 +2053,7 @@ function MemberDialog({
 }: {
   open: boolean
   group: Group
+  profile: PublicProfile
   busy: boolean
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => void
@@ -2054,6 +2066,7 @@ function MemberDialog({
       {open ? (
         <MemberForm
           group={group}
+          profile={profile}
           busy={busy}
           onSaved={onSaved}
           onRefresh={onRefresh}
@@ -2067,6 +2080,7 @@ function MemberDialog({
 
 function MemberForm({
   group,
+  profile,
   busy,
   onSaved,
   onRefresh,
@@ -2074,6 +2088,7 @@ function MemberForm({
   onBusy,
 }: {
   group: Group
+  profile: PublicProfile
   busy: boolean
   onSaved: (group: Group) => void
   onRefresh: () => Promise<void>
@@ -2105,6 +2120,7 @@ function MemberForm({
             onClick={() => {
               applyGroupPatchOptimistic({
                 group,
+                profile,
                 body: { action: "add-member", name },
                 onGroup: onSaved,
                 onError,
@@ -2255,6 +2271,7 @@ function PaymentForm({
             }
             applyGroupPatchOptimistic({
               group,
+              profile,
               body: {
                 action: "add-payment",
                 date,

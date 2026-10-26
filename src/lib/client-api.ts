@@ -25,7 +25,11 @@ import {
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
-import { preparePatchStore, upsertProfileInStore } from "@/lib/store-session"
+import {
+  preparePatchStore,
+  resolvePatchActor,
+  upsertProfileInStore,
+} from "@/lib/store-session"
 
 const PROFILE_KEY = "waybill.profile"
 const LOCAL_STORE_KEY = "waybill.store"
@@ -153,6 +157,9 @@ export async function logInUser(input: { username: string; password: string }) {
 
 export async function logoutUser() {
   clearSavedProfile()
+  if (typeof window !== "undefined") {
+    writeLocalStore(emptyStore())
+  }
   if (mode !== "unconfigured") {
     try {
       await request<{ ok: boolean }>("/api/auth/logout", { method: "POST" })
@@ -362,8 +369,14 @@ function runGroupPatchMutator(
 }
 
 /** Apply a PATCH body to the current trip in memory (no network). */
-export function previewGroupPatch(group: Group, body: Record<string, unknown>): Group {
-  const store = preparePatchStore(readLocalStore(), group, loadSavedProfile())
+export function previewGroupPatch(
+  group: Group,
+  body: Record<string, unknown>,
+  actor?: PublicProfile | null
+): Group {
+  const session = resolvePatchActor(actor, loadSavedProfile())
+  if (actor) syncProfileToLocalStore(actor)
+  const store = preparePatchStore(readLocalStore(), group, session)
   const result = runGroupPatchMutator(store, group.id, body)
   if (!result) throw new Error("Unknown action.")
   return result.group
@@ -378,11 +391,12 @@ export function commitGroupPatch(
     onError: (message: string) => void
     onReconciled?: (next: Group) => void
     fetchLatest?: () => Promise<Group>
-  }
+  },
+  actor?: PublicProfile | null
 ): void {
   let preview: Group
   try {
-    preview = previewGroupPatch(group, body)
+    preview = previewGroupPatch(group, body, actor)
   } catch (error) {
     handlers.onError(error instanceof Error ? error.message : "Update failed.")
     return
