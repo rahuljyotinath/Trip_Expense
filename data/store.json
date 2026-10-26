@@ -93,6 +93,50 @@
   ],
   "groups": [
     {
+      "id": "g_effe11eff3147750",
+      "name": "Jai Mata Di",
+      "code": "S5MNXC",
+      "currency": "INR",
+      "startDate": "2026-10-19",
+      "endDate": "2026-10-25",
+      "createdByProfileId": "p_8b3053971fddc375",
+      "createdAt": "2026-10-26T08:06:40.015Z",
+      "members": [
+        {
+          "id": "m_5633cc08efe47c49",
+          "name": "Rahul",
+          "profileId": "p_8b3053971fddc375"
+        },
+        {
+          "id": "m_d344e4ba06d3a510",
+          "name": "Mayuri",
+          "profileId": null
+        },
+        {
+          "id": "m_66cf2e8fc03087b5",
+          "name": "Julu",
+          "profileId": null
+        },
+        {
+          "id": "m_70af3cd924d1977e",
+          "name": "Kulu",
+          "profileId": null
+        },
+        {
+          "id": "m_5c314a86d2cc9721",
+          "name": "Diganta",
+          "profileId": null
+        },
+        {
+          "id": "m_121f1d7cb721753b",
+          "name": "Chintu",
+          "profileId": null
+        }
+      ],
+      "expenses": [],
+      "payments": []
+    },
+    {
       "id": "g_fb71195eff8ed968",
       "name": "Jai Mata Di",
       "code": "PEUTML",
