@@ -1,9 +1,4 @@
 {
   "framework": "nextjs",
-  "git": {
-    "deploymentEnabled": {
-      "ledger": false
-    }
-  },
   "ignoreCommand": "git rev-parse --verify HEAD^ >/dev/null 2>&1 && git diff --quiet HEAD^ HEAD -- . ':!data' ':!data/**'"
 }

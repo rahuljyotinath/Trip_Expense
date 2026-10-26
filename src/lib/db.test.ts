@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { DEFAULT_GITHUB_BRANCH, DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 
-test("defaults GitHub ledger to rahuljyotinath/Trip_Expense", () => {
+test("defaults GitHub target to rahuljyotinath/Trip_Expense on main", () => {
   const previous = {
     repo: process.env.GITHUB_REPO,
     branch: process.env.GITHUB_BRANCH,

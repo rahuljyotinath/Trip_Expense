@@ -1,5 +1,5 @@
 export const DEFAULT_GITHUB_REPO = "rahuljyotinath/Trip_Expense"
-export const DEFAULT_GITHUB_BRANCH = "ledger"
+export const DEFAULT_GITHUB_BRANCH = "main"
 export const DEFAULT_REMOTE_PATH = "data/store.json"
 
 export type GithubTarget = {

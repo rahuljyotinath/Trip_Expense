@@ -3,10 +3,164 @@
     {
       "id": "p_7275f25cb3233c1f",
       "name": "EnvSetup",
-      "createdAt": "2026-10-25T10:31:18.260Z"
+      "createdAt": "2026-10-25T10:31:18.260Z",
+      "username": "",
+      "passwordHash": "",
+      "email": null,
+      "phone": null
+    },
+    {
+      "id": "p_29350d167e5f9a70",
+      "name": "Rahul",
+      "createdAt": "2026-10-25T14:23:59.946Z",
+      "username": "",
+      "passwordHash": "",
+      "email": null,
+      "phone": null
+    },
+    {
+      "id": "p_ff2f20cb4409856b",
+      "name": "rahul",
+      "createdAt": "2026-10-25T16:55:31.624Z",
+      "username": "",
+      "passwordHash": "",
+      "email": null,
+      "phone": null
+    },
+    {
+      "id": "p_ee1ea1f26bbb31fa",
+      "name": "abc",
+      "createdAt": "2026-10-26T05:28:28.567Z",
+      "username": "",
+      "passwordHash": "",
+      "email": null,
+      "phone": null
+    },
+    {
+      "id": "p_1b122115c6eb490b",
+      "name": "rahul",
+      "createdAt": "2026-10-26T06:27:48.053Z",
+      "username": "",
+      "passwordHash": "",
+      "email": null,
+      "phone": null
+    },
+    {
+      "id": "p_8b3053971fddc375",
+      "username": "rahul",
+      "passwordHash": "scrypt$16384$8$1$o3UH60cCDp5Rr5pZbxHVAA$cgDunF_QR-tf4qxwddHByJivKSXSBzGVBbwnn3JvFq2SkOQnKg58f6T_V-qXWhXiAmEiebwSTsu7ABRPMuO72w",
+      "name": "Rahul",
+      "email": null,
+      "phone": null,
+      "createdAt": "2026-10-26T06:32:57.178Z"
+    },
+    {
+      "id": "p_0629620bdc00c596",
+      "username": "probetest99",
+      "passwordHash": "scrypt$16384$8$1$lHYTG-cgKPtrXj_0hzoqLA$kZ6w2Nu0rauc24njNzOKUwrVJF5B_6HDwX2R-uA6IRgEvsUMvxo3w_7HoHOaGg2TdCmdKnZO46uci_l3rs0hOw",
+      "name": "Probe",
+      "email": null,
+      "phone": null,
+      "createdAt": "2026-10-26T06:45:53.230Z"
+    },
+    {
+      "id": "p_02c29f300a2fdfcd",
+      "username": "afterfix1",
+      "passwordHash": "scrypt$16384$8$1$pSIU-Bb7W_VCfUxTTIZgFA$kxn9BTe3XOwo6PhQdFmgvo4zakGsuzsJL0ZNnraVZse6upWiffNcmG-tOV8lloa53FYhkBIfLBD6xtV4X7RgBg",
+      "name": "afterfix1",
+      "email": null,
+      "phone": null,
+      "createdAt": "2026-10-26T06:46:01.203Z"
     }
   ],
   "groups": [
+    {
+      "id": "g_fb71195eff8ed968",
+      "name": "Jai Mata Di",
+      "code": "PEUTML",
+      "currency": "INR",
+      "createdByProfileId": "p_ff2f20cb4409856b",
+      "createdAt": "2026-10-25T16:56:09.687Z",
+      "members": [
+        {
+          "id": "m_829320209ed258db",
+          "name": "rahul",
+          "profileId": "p_ff2f20cb4409856b"
+        },
+        {
+          "id": "m_858d5fad1e86e727",
+          "name": "mayuri",
+          "profileId": null
+        },
+        {
+          "id": "m_e6dbcd14b8eacc49",
+          "name": "diganta",
+          "profileId": null
+        },
+        {
+          "id": "m_ce515953c6ac5171",
+          "name": "kulu",
+          "profileId": null
+        },
+        {
+          "id": "m_68173e3374d78ba5",
+          "name": "julu",
+          "profileId": null
+        },
+        {
+          "id": "m_ef1083707450d11f",
+          "name": "chintu",
+          "profileId": "p_ee1ea1f26bbb31fa"
+        }
+      ],
+      "expenses": [
+        {
+          "id": "e_58fef86d1a7a95e0",
+          "date": "2026-10-26",
+          "amount": 26,
+          "reason": "efef",
+          "paidByMemberId": "m_829320209ed258db",
+          "participantIds": [
+            "m_829320209ed258db",
+            "m_858d5fad1e86e727",
+            "m_e6dbcd14b8eacc49",
+            "m_ce515953c6ac5171",
+            "m_68173e3374d78ba5",
+            "m_ef1083707450d11f"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_ff2f20cb4409856b",
+          "createdAt": "2026-10-26T05:58:58.427Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
+          "id": "e_01701d134b0e04ed",
+          "date": "2026-10-26",
+          "amount": 26,
+          "reason": "26",
+          "paidByMemberId": "m_829320209ed258db",
+          "participantIds": [
+            "m_829320209ed258db",
+            "m_858d5fad1e86e727",
+            "m_e6dbcd14b8eacc49",
+            "m_ce515953c6ac5171",
+            "m_68173e3374d78ba5",
+            "m_ef1083707450d11f"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_ff2f20cb4409856b",
+          "createdAt": "2026-10-26T05:27:38.319Z",
+          "voidedAt": "2026-10-26T05:58:45.456Z",
+          "voidedByProfileId": "p_ff2f20cb4409856b"
+        }
+      ],
+      "payments": [],
+      "startDate": null,
+      "endDate": null
+    },
     {
       "id": "g_3caffdb812746042",
       "name": "Env check",
@@ -27,7 +181,9 @@
         }
       ],
       "expenses": [],
-      "payments": []
+      "payments": [],
+      "startDate": null,
+      "endDate": null
     }
   ]
 }
