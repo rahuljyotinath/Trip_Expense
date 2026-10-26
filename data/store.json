@@ -135,6 +135,23 @@
       ],
       "expenses": [
         {
+          "id": "e_16e81d7768d32f60",
+          "date": "2026-10-23",
+          "amount": 100,
+          "reason": "Lassi - 2",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:34:18.717Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_bf38dcd9c2f91864",
           "date": "2026-10-23",
           "amount": 1500,
