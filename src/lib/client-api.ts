@@ -277,17 +277,24 @@ export async function openTrip(input: {
 
 type GroupPatchResult = { store: Store; group: Group }
 
+function resolvePatchProfileId(body: Record<string, unknown>, fallbackId: string) {
+  const raw = String(body.profileId ?? "").trim()
+  return raw || fallbackId
+}
+
 function runGroupPatchMutator(
   store: Store,
   id: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  actorProfileId = ""
 ): GroupPatchResult | null {
+  const profileId = resolvePatchProfileId(body, actorProfileId)
   const action = body.action
   if (action === "claim") {
     return claimMember(store, {
       groupId: id,
       memberId: String(body.memberId ?? ""),
-      profileId: String(body.profileId ?? ""),
+      profileId,
     })
   }
   if (action === "add-member") {
@@ -296,7 +303,7 @@ function runGroupPatchMutator(
   if (action === "update-group") {
     return updateGroup(store, {
       groupId: id,
-      profileId: String(body.profileId ?? ""),
+      profileId,
       name: body.name !== undefined ? String(body.name) : undefined,
       startDate:
         body.startDate === undefined
@@ -322,21 +329,21 @@ function runGroupPatchMutator(
       participantIds: (body.participantIds as string[]) ?? [],
       split: body.split as SplitMode | undefined,
       shares: (body.shares as Record<string, number>) ?? {},
-      createdByProfileId: String(body.profileId ?? ""),
+      createdByProfileId: profileId,
     })
   }
   if (action === "delete-expense") {
     return deleteExpense(store, {
       groupId: id,
       expenseId: String(body.expenseId ?? ""),
-      profileId: String(body.profileId ?? ""),
+      profileId,
     })
   }
   if (action === "update-expense") {
     return updateExpense(store, {
       groupId: id,
       expenseId: String(body.expenseId ?? ""),
-      profileId: String(body.profileId ?? ""),
+      profileId,
       date: String(body.date ?? ""),
       amount: Number(body.amount),
       reason: String(body.reason ?? ""),
@@ -350,7 +357,7 @@ function runGroupPatchMutator(
     return voidExpense(store, {
       groupId: id,
       expenseId: String(body.expenseId ?? ""),
-      profileId: String(body.profileId ?? ""),
+      profileId,
       restore: Boolean(body.restore),
     })
   }
@@ -361,21 +368,21 @@ function runGroupPatchMutator(
       amount: Number(body.amount),
       fromMemberId: String(body.fromMemberId ?? ""),
       toMemberId: String(body.toMemberId ?? ""),
-      createdByProfileId: String(body.profileId ?? ""),
+      createdByProfileId: profileId,
     })
   }
   if (action === "void-payment") {
     return voidPayment(store, {
       groupId: id,
       paymentId: String(body.paymentId ?? ""),
-      profileId: String(body.profileId ?? ""),
+      profileId,
       restore: Boolean(body.restore),
     })
   }
   if (action === "import-trip-csv") {
     return importTripCsv(store, {
       groupId: id,
-      profileId: String(body.profileId ?? ""),
+      profileId,
       csv: String(body.csv ?? ""),
     })
   }
@@ -388,7 +395,7 @@ function runGroupPatchMutator(
         rawCover === null || rawCover === undefined || rawCover === ""
           ? null
           : String(rawCover),
-      profileId: String(body.profileId ?? ""),
+      profileId,
     })
   }
   return null
@@ -403,10 +410,10 @@ export function previewGroupPatch(
   const session = resolvePatchActor(actor, loadSavedProfile())
   if (!session?.id) throw new Error("Sign in again.")
   if (actor) syncProfileToLocalStore(actor)
-  const profileId = String(body.profileId ?? session.id)
+  const profileId = resolvePatchProfileId(body, session.id)
   let store = preparePatchStore(readLocalStore(), group, session)
   store = ensureProfileForPatch(store, group, profileId)
-  const result = runGroupPatchMutator(store, group.id, body)
+  const result = runGroupPatchMutator(store, group.id, body, session.id)
   if (!result) throw new Error("Unknown action.")
   return result.group
 }
@@ -434,7 +441,7 @@ export function commitGroupPatch(
 
   void (async () => {
     try {
-      const server = await patchGroup(group.id, body)
+      const server = await patchGroup(group.id, body, group)
       handlers.onReconciled?.(server)
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Could not save."
@@ -451,13 +458,17 @@ export function commitGroupPatch(
   })()
 }
 
-async function patchGroup(id: string, body: Record<string, unknown>) {
+async function patchGroup(id: string, body: Record<string, unknown>, groupHint?: Group) {
   if (mode === "unconfigured") {
-    const group = readLocalStore().groups.find((item) => item.id === id)
-    const store = group
-      ? preparePatchStore(readLocalStore(), group, loadSavedProfile())
-      : readLocalStore()
-    const result = runGroupPatchMutator(store, id, body)
+    const saved = loadSavedProfile()
+    if (!saved?.id) throw new Error("Sign in again.")
+    const group =
+      groupHint ?? readLocalStore().groups.find((item) => item.id === id) ?? null
+    if (!group) throw new Error("Trip not found.")
+    const profileId = resolvePatchProfileId(body, saved.id)
+    let store = preparePatchStore(readLocalStore(), group, saved)
+    store = ensureProfileForPatch(store, group, profileId)
+    const result = runGroupPatchMutator(store, id, body, saved.id)
     if (!result) throw new Error("Unknown action.")
     writeLocalStore(result.store)
     return result.group

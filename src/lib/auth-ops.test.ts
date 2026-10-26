@@ -47,6 +47,10 @@ test("profileNeedsSetup when name matches username", () => {
   assert.equal(profileNeedsSetup(created.profile), true)
 })
 
+test("profileNeedsSetup false when display name differs only by case", () => {
+  assert.equal(profileNeedsSetup({ username: "rahul", name: "Rahul" }), false)
+})
+
 test("logIn rejects wrong password", () => {
   const created = signUp(emptyStore(), { username: "jane", password: "password123" })
   assert.throws(() =>

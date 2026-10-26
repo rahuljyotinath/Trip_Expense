@@ -117,5 +117,5 @@ export function updateProfile(
 
 /** True when the user still has the default signup name (username only). */
 export function profileNeedsSetup(profile: Pick<Profile, "name" | "username">) {
-  return profile.name.trim().toLowerCase() === profile.username.trim().toLowerCase()
+  return profile.name.trim() === profile.username.trim()
 }
