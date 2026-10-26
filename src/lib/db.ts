@@ -7,10 +7,13 @@ import {
   resolveGithubTarget,
   type GithubTarget,
 } from "./github-target"
+import { storesEqual } from "./store-compare"
 
 export { DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
+
+const LOAD_CACHE_MS = Number(process.env.GITHUB_LOAD_CACHE_MS) || 3000
 
 type Loaded = {
   store: Store
@@ -25,6 +28,8 @@ export type GithubProbe = GithubTarget & {
 }
 
 let queue: Promise<unknown> = Promise.resolve()
+
+let loadCache: { loaded: Loaded; at: number } | null = null
 
 function enqueue<T>(job: () => Promise<T>) {
   const run = queue.then(job, job)
@@ -51,6 +56,20 @@ function githubErrorMessage(error: unknown) {
   if (status === 404) return "GitHub repo not found, or the token cannot see it."
   if (status === 409) return "GitHub repo is empty. First Contents write should create data/store.json."
   return message
+}
+
+function peekFreshLoadCache(): Loaded | null {
+  if (!loadCache) return null
+  if (Date.now() - loadCache.at > LOAD_CACHE_MS) return null
+  return loadCache.loaded
+}
+
+function setLoadCache(loaded: Loaded) {
+  loadCache = { loaded, at: Date.now() }
+}
+
+export function invalidateLoadCache() {
+  loadCache = null
 }
 
 export function storageMode(): StorageMode {
@@ -82,24 +101,23 @@ export async function probeGithub(): Promise<GithubProbe> {
     return { ...base, error: githubErrorMessage(error) }
   }
 
+  const cached = peekFreshLoadCache()
+  if (cached?.sha) {
+    return { ...base, connected: true, sha: cached.sha, error: null }
+  }
+
   try {
     const loaded = await readGithub()
+    setLoadCache(loaded)
     if (loaded.sha) {
       return { ...base, connected: true, sha: loaded.sha, error: null }
     }
-    await writeGithub(loaded.store)
-    const created = await readGithub()
-    return { ...base, connected: true, sha: created.sha, error: null }
+    return { ...base, connected: true, error: null }
   } catch (error) {
     const status = (error as { status?: number }).status
-    if (status === 404 || status === 409) {
-      try {
-        await writeGithub(emptyStore())
-        const created = await readGithub()
-        return { ...base, connected: true, sha: created.sha, error: null }
-      } catch (writeError) {
-        return { ...base, error: githubErrorMessage(writeError) }
-      }
+    if (status === 404) {
+      setLoadCache({ store: emptyStore() })
+      return { ...base, connected: true, error: null }
     }
     return { ...base, error: githubErrorMessage(error) }
   }
@@ -172,16 +190,24 @@ async function writeGithub(store: Store, sha?: string) {
   })
 }
 
-async function load(): Promise<Loaded> {
-  return storageMode() === "github" ? readGithub() : readLocal()
+async function load(force = false): Promise<Loaded> {
+  if (!force) {
+    const cached = peekFreshLoadCache()
+    if (cached) return cached
+  }
+  const loaded = storageMode() === "github" ? await readGithub() : await readLocal()
+  setLoadCache(loaded)
+  return loaded
 }
 
 async function save(store: Store, sha?: string) {
   if (storageMode() === "github") {
     await writeGithub(store, sha)
+    invalidateLoadCache()
     return
   }
   await writeLocal(store)
+  setLoadCache({ store })
 }
 
 export async function readStore() {
@@ -192,17 +218,21 @@ export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) 
   return enqueue(async () => {
     let lastError: unknown
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const loaded = await load()
+      const loaded = await load(attempt > 0)
       const result = await mutator(loaded.store)
       const next =
         result && typeof result === "object" && "store" in result
           ? (result as { store: Store }).store
           : loaded.store
+      if (storesEqual(next, loaded.store)) {
+        return result
+      }
       try {
         await save(next, loaded.sha)
         return result
       } catch (error) {
         lastError = error
+        invalidateLoadCache()
         const status = (error as { status?: number }).status
         if (status !== 409 && status !== 422) throw error
       }

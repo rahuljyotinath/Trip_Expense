@@ -185,10 +185,12 @@ export function WaybillApp() {
     let cancelled = false
     ;(async () => {
       try {
-        const nextHealth = await loadHealth()
+        const [nextHealth, session] = await Promise.all([
+          loadHealth(),
+          fetchSessionProfile(),
+        ])
         if (cancelled) return
         setHealth(nextHealth)
-        const session = await fetchSessionProfile()
         if (!session?.id || !session?.username) {
           clearSavedProfile()
           setScreen("auth")

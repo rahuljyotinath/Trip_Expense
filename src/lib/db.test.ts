@@ -1,6 +1,24 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { storesEqual } from "./store-compare"
 import { DEFAULT_GITHUB_BRANCH, DEFAULT_GITHUB_REPO, resolveGithubTarget } from "./github-target"
+import { emptyStore } from "./types"
+
+test("storesEqual compares normalized store snapshots", () => {
+  const a = emptyStore()
+  const b = emptyStore()
+  assert.equal(storesEqual(a, b), true)
+  b.profiles.push({
+    id: "p1",
+    username: "u",
+    passwordHash: "h",
+    name: "U",
+    email: null,
+    phone: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  })
+  assert.equal(storesEqual(a, b), false)
+})
 
 test("defaults GitHub target to rahuljyotinath/Trip_Expense on main", () => {
   const previous = {
