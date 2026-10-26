@@ -135,6 +135,26 @@
       ],
       "expenses": [
         {
+          "id": "e_8df2302073c939f3",
+          "date": "2026-10-24",
+          "amount": 150,
+          "reason": "Auto - CP to Cafe Sandoz",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:38:07.994Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_7831c49013b64fb6",
           "date": "2026-10-24",
           "amount": 215,
