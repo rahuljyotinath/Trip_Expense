@@ -135,6 +135,27 @@
       ],
       "expenses": [
         {
+          "id": "e_46429d966afa7942",
+          "date": "2026-10-21",
+          "amount": 7000,
+          "reason": "Katra Hotel Remaining",
+          "paidByMemberId": "m_5c314a86d2cc9721",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_5c314a86d2cc9721",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:48:37.033Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_85d78b13bdbace82",
           "date": "2026-10-21",
           "amount": 2000,
