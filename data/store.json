@@ -135,6 +135,26 @@
       ],
       "expenses": [
         {
+          "id": "e_f999ab9f69f6c18e",
+          "date": "2026-10-25",
+          "amount": 1257,
+          "reason": "Cab - Ghy airport to Delhi",
+          "paidByMemberId": "m_5633cc08efe47c49",
+          "participantIds": [
+            "m_5633cc08efe47c49",
+            "m_d344e4ba06d3a510",
+            "m_66cf2e8fc03087b5",
+            "m_70af3cd924d1977e",
+            "m_121f1d7cb721753b"
+          ],
+          "split": "equal",
+          "shares": {},
+          "createdByProfileId": "p_8b3053971fddc375",
+          "createdAt": "2026-10-26T08:43:21.268Z",
+          "voidedAt": null,
+          "voidedByProfileId": null
+        },
+        {
           "id": "e_0ea17b80e8caee43",
           "date": "2026-10-24",
           "amount": 414,
