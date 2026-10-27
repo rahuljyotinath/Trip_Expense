@@ -78,11 +78,14 @@
 
 ## Cleanup
 
-Run after deploy verification:
+Deploy with fixes: commit `bb4095f` on `main`.
+
+Remove all `[QA-TEMP]` trips (includes browser trip `g_fcb6e764e3aa66c3`):
 
 ```bash
-POSTGRES_URL=... npm run qa:purge -- --dry-run
-POSTGRES_URL=... npm run qa:purge
+vercel env pull .env.local   # once, if needed
+npm run qa:purge -- --dry-run
+npm run qa:purge
 ```
 
-Removes browser-created trip and any script-seeded QA trips.
+Or Supabase SQL (filters `groups` by name prefix) — see `scripts/purge-qa-trips.ts` for the same logic via app types.

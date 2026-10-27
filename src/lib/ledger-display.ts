@@ -1,5 +1,6 @@
 import { fromPaise, toPaise } from "./money"
 import { expenseShareCutsPaise } from "./settle"
+import { memberName } from "./trip-member"
 import type { Expense, Group, Payment } from "./types"
 
 export function compareLedgerExpenses(a: Expense, b: Expense) {
@@ -241,19 +242,71 @@ export type LedgerDayItem =
   | { kind: "expense"; createdAt: string; expense: Expense }
   | { kind: "payment"; createdAt: string; payment: Payment }
 
-export function ledgerDayItems(day: LedgerDayForViewer): LedgerDayItem[] {
-  const items: LedgerDayItem[] = [
-    ...day.expenses.map((expense) => ({
-      kind: "expense" as const,
+function buildLedgerDayItemMap(day: LedgerDayForViewer) {
+  const byId = new Map<string, LedgerDayItem>()
+  for (const expense of day.expenses) {
+    byId.set(expense.id, {
+      kind: "expense",
       createdAt: expense.createdAt,
       expense,
-    })),
-    ...day.payments.map((payment) => ({
-      kind: "payment" as const,
+    })
+  }
+  for (const payment of day.payments) {
+    byId.set(payment.id, {
+      kind: "payment",
       createdAt: payment.createdAt,
       payment,
-    })),
-  ]
+    })
+  }
+  return byId
+}
+
+export function ledgerDayItemsChronological(day: LedgerDayForViewer): LedgerDayItem[] {
+  const items = [...buildLedgerDayItemMap(day).values()]
   items.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return items
+}
+
+export function ledgerDayItems(
+  day: LedgerDayForViewer,
+  ledgerDayOrder?: Record<string, string[]>
+): LedgerDayItem[] {
+  const byId = buildLedgerDayItemMap(day)
+  const chronological = [...byId.values()].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt)
+  )
+  const order = ledgerDayOrder?.[day.date]
+  if (!order?.length) return chronological
+
+  const seen = new Set<string>()
+  const result: LedgerDayItem[] = []
+  for (const id of order) {
+    const item = byId.get(id)
+    if (item) {
+      result.push(item)
+      seen.add(id)
+    }
+  }
+  for (const item of chronological) {
+    const id = item.kind === "expense" ? item.expense.id : item.payment.id
+    if (!seen.has(id)) result.push(item)
+  }
+  return result
+}
+
+/** Muted subtitle for a group ledger expense row. */
+export function expenseRowMeta(
+  group: Group,
+  expense: Expense,
+  viewerMemberId?: string | null
+): string {
+  const payer =
+    viewerMemberId && expense.paidByMemberId === viewerMemberId
+      ? "You"
+      : memberName(group, expense.paidByMemberId)
+  const withNames = expense.participantIds.map((id) =>
+    viewerMemberId && id === viewerMemberId ? "you" : memberName(group, id)
+  )
+  const uniqueWith = [...new Set(withNames)]
+  return `Paid by ${payer} · With: ${uniqueWith.join(", ")}`
 }

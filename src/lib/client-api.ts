@@ -3,7 +3,9 @@ import {
   normalizeStore,
   publicProfile,
   type Group,
+  type JoinRequest,
   type PublicProfile,
+  type TripInvite,
   type SplitMode,
   type StorageMode,
   type Store,
@@ -13,7 +15,12 @@ import {
   addExpense,
   addMember,
   addPayment,
-  claimMember,
+  claimMemberWithJoinApproval,
+  approveJoinRequest,
+  rejectJoinRequest,
+  requestJoin,
+  revokeTripInvite,
+  sendTripInvite,
   importTripCsv,
   setMemberCover,
   createGroup,
@@ -22,9 +29,11 @@ import {
   groupsForProfile,
   updateExpense,
   updateGroup,
+  reorderLedgerDay,
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
+import { joinRequestForProfile } from "@/lib/trip-invites"
 import { nowIso } from "@/lib/ids"
 import {
   browserOutbox,
@@ -411,26 +420,106 @@ export async function fetchMyGroups(profileId: string) {
   return data.groups
 }
 
-export async function fetchGroupByCode(code: string) {
+export type GroupCodeLookup = {
+  group: Group
+  joinRequest: JoinRequest | null
+}
+
+export async function fetchGroupByCode(code: string): Promise<GroupCodeLookup> {
   requireNetworkForInvite()
   if (mode === "unconfigured") {
-    const group = groupByCode(readLocalStore(), code)
+    const store = readLocalStore()
+    const group = groupByCode(store, code)
     if (!group) throw new Error("No trip uses that code.")
-    return group
+    const profileId = loadSavedProfile()?.id ?? ""
+    return {
+      group,
+      joinRequest: profileId
+        ? joinRequestForProfile(store, group.id, profileId)
+        : null,
+    }
   }
   try {
-    const data = await request<{ group: Group }>(`/api/groups?code=${encodeURIComponent(code)}`)
-    return data.group
+    const data = await request<{ group: Group; joinRequest?: JoinRequest | null }>(
+      `/api/groups?code=${encodeURIComponent(code)}`
+    )
+    return { group: data.group, joinRequest: data.joinRequest ?? null }
   } catch (error) {
     inviteNetworkError(error)
   }
+}
+
+export type PendingTripInvite = {
+  id: string
+  groupId: string
+  invitedEmail: string | null
+  invitedPhone: string | null
+  status: string
+  tripName: string
+}
+
+export async function fetchPendingTripInvites(): Promise<PendingTripInvite[]> {
+  if (mode === "unconfigured") return []
+  const data = await request<{ invites: PendingTripInvite[] }>("/api/trip-invites")
+  return data.invites ?? []
+}
+
+export async function respondTripInvite(action: "accept" | "decline", inviteId: string) {
+  if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
+  const data = await request<{ group?: Group }>("/api/trip-invites", {
+    method: "POST",
+    body: JSON.stringify({ action, inviteId }),
+  })
+  return data.group ?? null
+}
+
+export type KnownContact = {
+  id: string
+  name: string
+  username: string | null
+  email: string | null
+  phone: string | null
+  contactId: string
+  source: "search" | "trip" | "invite"
+  createdAt: string
+}
+
+export async function fetchKnownContacts(): Promise<KnownContact[]> {
+  if (mode === "unconfigured") return []
+  const data = await request<{ contacts: KnownContact[] }>("/api/contacts")
+  return data.contacts ?? []
+}
+
+export async function addKnownContact(input: { query?: string; targetProfileId?: string }) {
+  if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
+  const data = await request<{ contacts: KnownContact[] }>("/api/contacts", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  return data.contacts ?? []
+}
+
+export async function removeKnownContact(targetProfileId: string) {
+  if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
+  const data = await request<{ contacts: KnownContact[] }>("/api/contacts", {
+    method: "POST",
+    body: JSON.stringify({ action: "remove", targetProfileId }),
+  })
+  return data.contacts ?? []
+}
+
+export type GroupFetchDetail = {
+  group: Group
+  joinRequest: JoinRequest | null
+  pendingJoinRequests: JoinRequest[]
+  pendingTripInvites: TripInvite[]
 }
 
 async function requestGroupById(
   id: string,
   allowRetry: boolean,
   joinCode?: string | null
-): Promise<Group> {
+): Promise<GroupFetchDetail> {
   const joinQuery =
     joinCode && joinCode.trim()
       ? `?join=${encodeURIComponent(joinCode.trim().toUpperCase())}`
@@ -445,6 +534,9 @@ async function requestGroupById(
     })
     const data = (await response.json().catch(() => ({}))) as {
       group?: Group
+      joinRequest?: JoinRequest | null
+      pendingJoinRequests?: JoinRequest[]
+      pendingTripInvites?: TripInvite[]
       error?: string
     }
     if (response.status === 503 || data.error === "unconfigured") {
@@ -459,7 +551,12 @@ async function requestGroupById(
       throw new Error(data.error || "Request failed.")
     }
     if (!data.group) throw new Error("Trip not found.")
-    return data.group
+    return {
+      group: data.group,
+      joinRequest: data.joinRequest ?? null,
+      pendingJoinRequests: data.pendingJoinRequests ?? [],
+      pendingTripInvites: data.pendingTripInvites ?? [],
+    }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("Request timed out. Check your connection and try again.")
@@ -470,21 +567,36 @@ async function requestGroupById(
   }
 }
 
+export async function fetchGroupDetail(
+  id: string,
+  options?: { skipHealth?: boolean; joinCode?: string | null }
+): Promise<GroupFetchDetail> {
+  syncModeFromPersistedHealth()
+  await ensureClientMode(options)
+  if (mode === "unconfigured") {
+    const store = readLocalStore()
+    const group = store.groups.find((item) => item.id === id)
+    if (!group) throw new Error("Trip not found.")
+    const profileId = loadSavedProfile()?.id ?? ""
+    return {
+      group,
+      joinRequest: profileId ? joinRequestForProfile(store, id, profileId) : null,
+      pendingJoinRequests: [],
+      pendingTripInvites: [],
+    }
+  }
+  const detail = await requestGroupById(id, true, options?.joinCode)
+  const merged = applyPendingOutbox(detail.group)
+  persistGroupSnapshot(merged)
+  return { ...detail, group: merged }
+}
+
 export async function fetchGroup(
   id: string,
   options?: { skipHealth?: boolean; joinCode?: string | null }
 ) {
-  syncModeFromPersistedHealth()
-  await ensureClientMode(options)
-  if (mode === "unconfigured") {
-    const group = readLocalStore().groups.find((item) => item.id === id)
-    if (!group) throw new Error("Trip not found.")
-    return group
-  }
-  const group = await requestGroupById(id, true, options?.joinCode)
-  const merged = applyPendingOutbox(group)
-  persistGroupSnapshot(merged)
-  return merged
+  const detail = await fetchGroupDetail(id, options)
+  return detail.group
 }
 
 export async function openTrip(input: {
@@ -529,9 +641,45 @@ function runGroupPatchMutator(
   const profileId = resolvePatchProfileId(body, actorProfileId)
   const action = body.action
   if (action === "claim") {
-    return claimMember(store, {
+    return claimMemberWithJoinApproval(store, {
       groupId: id,
       memberId: String(body.memberId ?? ""),
+      profileId,
+    })
+  }
+  if (action === "request-join") {
+    return requestJoin(store, {
+      groupId: id,
+      profileId,
+      code: String(body.code ?? ""),
+    })
+  }
+  if (action === "approve-join-request") {
+    return approveJoinRequest(store, {
+      groupId: id,
+      requestId: String(body.requestId ?? ""),
+      profileId,
+    })
+  }
+  if (action === "reject-join-request") {
+    return rejectJoinRequest(store, {
+      groupId: id,
+      requestId: String(body.requestId ?? ""),
+      profileId,
+    })
+  }
+  if (action === "send-trip-invite") {
+    return sendTripInvite(store, {
+      groupId: id,
+      profileId,
+      email: body.email as string | null | undefined,
+      phone: body.phone as string | null | undefined,
+    })
+  }
+  if (action === "revoke-trip-invite") {
+    return revokeTripInvite(store, {
+      groupId: id,
+      inviteId: String(body.inviteId ?? ""),
       profileId,
     })
   }
@@ -636,6 +784,14 @@ function runGroupPatchMutator(
           ? null
           : String(rawCover),
       profileId,
+    })
+  }
+  if (action === "reorder-ledger-day") {
+    return reorderLedgerDay(store, {
+      groupId: id,
+      profileId,
+      date: String(body.date ?? ""),
+      orderedIds: (body.orderedIds as string[]) ?? [],
     })
   }
   return null

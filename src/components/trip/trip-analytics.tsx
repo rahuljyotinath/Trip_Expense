@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useMemo } from "react"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { LedgerSpendChart } from "@/components/trip/ledger-spend-chart"
@@ -13,8 +12,6 @@ import { formatMoney } from "@/lib/money"
 import { memberName } from "@/lib/trip-member"
 import { tripStats } from "@/lib/stats"
 import type { Group } from "@/lib/types"
-import { formatTripDates } from "@/components/waybill-app"
-
 export function TripAnalytics({
   group,
   tripPath,
@@ -34,29 +31,11 @@ export function TripAnalytics({
   )
   const groupExpenses = useMemo(() => ledgerGroupExpenses(group), [group])
   const paymentCount = (group.payments ?? []).filter((p) => !p.voidedAt).length
-  const tripDates = formatTripDates(group)
   const showChart =
     groupExpenses.length > 0 || (group.payments ?? []).some((item) => !item.voidedAt)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-heading text-2xl tracking-tight">Analytics</h2>
-          <p className="text-sm text-muted-foreground">
-            {group.name}
-            {tripDates ? ` · ${tripDates}` : ""}
-          </p>
-        </div>
-        <Link
-          href={tripPath}
-          className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium shadow-sm hover:bg-muted"
-        >
-          Back to trip
-        </Link>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-6">
+    <div className="min-h-0 flex-1 space-y-4 pb-6">
         {showChart ? (
           <LedgerSpendChart
             group={group}
@@ -143,7 +122,6 @@ export function TripAnalytics({
             </tbody>
           </table>
         </div>
-      </div>
     </div>
   )
 }

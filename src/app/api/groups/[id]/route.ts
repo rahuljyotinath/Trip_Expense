@@ -10,17 +10,30 @@ import {
 import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
+import {
+  isTripAdmin,
+  joinRequestsForGroup,
+  joinRequestForProfile,
+  storeTripInvites,
+} from "@/lib/trip-invites"
 import { canViewGroup } from "@/lib/trip-access"
 import {
   addExpense,
   addMember,
   addPayment,
-  claimMember,
+  approveJoinRequest,
+  claimMemberWithJoinApproval,
+  declineTripInvite,
   deleteExpense,
   updateExpense,
   updateGroup,
   importTripCsv,
+  rejectJoinRequest,
+  requestJoin,
+  revokeTripInvite,
+  sendTripInvite,
   setMemberCover,
+  reorderLedgerDay,
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
@@ -62,10 +75,29 @@ export async function GET(
       )
       return json({ error: "Trip not found." }, 404)
     }
-    if (!canViewGroup(sessionId, group, { joinCode })) {
+    const store = await readStoreFresh()
+    const joinRequests = store.joinRequests ?? []
+    if (!canViewGroup(sessionId, group, { joinCode, joinRequests })) {
       return json({ error: "You don't have access to this trip." }, 403)
     }
-    return json({ group })
+    const joinRequest = joinRequestForProfile(store, group.id, sessionId)
+    const admin = isTripAdmin(group, sessionId)
+    const pendingJoinRequests = admin
+      ? joinRequestsForGroup(store, group.id)
+          .filter((item) => item.status === "pending")
+          .map((item) => ({
+            ...item,
+            profileName:
+              store.profiles.find((profile) => profile.id === item.profileId)?.name ??
+              "Traveler",
+          }))
+      : undefined
+    const pendingTripInvites = admin
+      ? storeTripInvites(store).filter(
+          (item) => item.groupId === group.id && item.status === "pending"
+        )
+      : undefined
+    return json({ group, joinRequest, pendingJoinRequests, pendingTripInvites })
   } catch (error) {
     return fail(error)
   }
@@ -107,6 +139,12 @@ export async function PATCH(
       coveredByMemberId?: string | null
       csv?: string
       restore?: boolean
+      orderedIds?: string[]
+      inviteId?: string
+      requestId?: string
+      email?: string | null
+      phone?: string | null
+      code?: string
     }>(request)
 
     const result = await updateStore((store) => {
@@ -120,9 +158,50 @@ export async function PATCH(
 
       if (body.action === "claim") {
         requireSessionProfile()
-        return claimMember(store, {
+        return claimMemberWithJoinApproval(store, {
           groupId: id,
           memberId: body.memberId ?? "",
+          profileId: sessionId,
+        })
+      }
+      if (body.action === "request-join") {
+        requireSessionProfile()
+        return requestJoin(store, {
+          groupId: id,
+          profileId: sessionId,
+          code: body.code ?? "",
+        })
+      }
+      if (body.action === "approve-join-request") {
+        requireSessionProfile()
+        return approveJoinRequest(store, {
+          groupId: id,
+          requestId: body.requestId ?? "",
+          profileId: sessionId,
+        })
+      }
+      if (body.action === "reject-join-request") {
+        requireSessionProfile()
+        return rejectJoinRequest(store, {
+          groupId: id,
+          requestId: body.requestId ?? "",
+          profileId: sessionId,
+        })
+      }
+      if (body.action === "send-trip-invite") {
+        requireSessionProfile()
+        return sendTripInvite(store, {
+          groupId: id,
+          profileId: sessionId,
+          email: body.email,
+          phone: body.phone,
+        })
+      }
+      if (body.action === "revoke-trip-invite") {
+        requireSessionProfile()
+        return revokeTripInvite(store, {
+          groupId: id,
+          inviteId: body.inviteId ?? "",
           profileId: sessionId,
         })
       }
@@ -226,6 +305,15 @@ export async function PATCH(
               ? null
               : String(rawCover),
           profileId: sessionId,
+        })
+      }
+      if (body.action === "reorder-ledger-day") {
+        requireSessionProfile()
+        return reorderLedgerDay(store, {
+          groupId: id,
+          profileId: sessionId,
+          date: body.date ?? "",
+          orderedIds: body.orderedIds ?? [],
         })
       }
       throw new Error("Unknown action.")

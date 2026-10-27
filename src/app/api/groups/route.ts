@@ -3,6 +3,7 @@ import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
+import { joinRequestForProfile } from "@/lib/trip-invites"
 import { createGroup, groupByCode, groupsForProfile } from "@/lib/operations"
 
 export async function GET(request: Request) {
@@ -22,7 +23,8 @@ export async function GET(request: Request) {
     if (code) {
       const group = groupByCode(store, code)
       if (!group) return json({ error: "No trip uses that code." }, 404)
-      return json({ group })
+      const joinRequest = joinRequestForProfile(store, group.id, sessionId)
+      return json({ group, joinRequest })
     }
     if (!profileId) return json({ error: "profileId or code required." }, 400)
     if (profileId !== sessionId) {

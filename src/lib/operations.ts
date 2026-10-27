@@ -1,14 +1,40 @@
+import { ledgerDaysForViewer } from "@/lib/ledger-display"
+import { isGroupMember } from "@/lib/trip-access"
+import {
+  appendLedgerDayOrder,
+  expectedLedgerDayIds,
+  moveIdBetweenLedgerDays,
+  removeIdFromLedgerDayOrder,
+  setLedgerDayOrder,
+} from "@/lib/ledger-day-order"
 import { joinCode, nowIso, uid } from "@/lib/ids"
 import { sharesComplete } from "@/lib/shares"
 import { parseTripCsv } from "@/lib/trip-csv"
 import {
+  normalizeInviteEmail,
+  normalizeInvitePhone,
+  isTripAdmin,
+  profileMatchesInvite,
+  joinRequestForProfile,
+} from "@/lib/trip-invites"
+import {
+  findProfileForContactSearch,
+  listContactsForProfile,
+  removeContactFromStore,
+  syncTripContacts,
+  upsertContactInStore,
+} from "@/lib/trip-contacts"
+import {
   normalizeGroup,
   type Expense,
   type Group,
+  type JoinRequest,
   type Payment,
   type Profile,
   type SplitMode,
+  type ContactSource,
   type Store,
+  type TripInvite,
 } from "@/lib/types"
 
 function cleanName(raw: string, max: number) {
@@ -113,6 +139,7 @@ export function createGroup(
     })),
     expenses: [],
     payments: [],
+    joinApprovalRequired: true,
   }
 
   return {
@@ -197,7 +224,9 @@ export function claimMember(
       item.id === member.id ? { ...item, profileId: profile.id } : item
     ),
   }
-  return { store: replaceGroup(store, next), group: next }
+  const withGroup = replaceGroup(store, next)
+  const withContacts = syncTripContacts(withGroup, next.id)
+  return { store: withContacts, group: next }
 }
 
 function requireDate(date: string) {
@@ -257,7 +286,8 @@ export function addExpense(
     voidedAt: null,
     voidedByProfileId: null,
   }
-  const next: Group = { ...group, expenses: [expense, ...group.expenses] }
+  let next: Group = { ...group, expenses: [expense, ...group.expenses] }
+  next = appendLedgerDayOrder(next, expense.date, expense.id)
   return { store: replaceGroup(store, next), group: next }
 }
 
@@ -336,7 +366,7 @@ export function updateExpense(
   }
 
   const fields = validateExpenseInput(group, input)
-  const next: Group = {
+  let next: Group = {
     ...group,
     expenses: group.expenses.map((item) =>
       item.id === expense.id
@@ -346,6 +376,9 @@ export function updateExpense(
           }
         : item
     ),
+  }
+  if (fields.date !== expense.date) {
+    next = moveIdBetweenLedgerDays(next, expense.id, expense.date, fields.date)
   }
   return { store: replaceGroup(store, next), group: next }
 }
@@ -360,10 +393,11 @@ export function deleteExpense(
   if (!canVoid(group, input.profileId, expense.createdByProfileId)) {
     throw new Error("Only the author or trip opener can delete this spend.")
   }
-  const next: Group = {
+  let next: Group = {
     ...group,
     expenses: group.expenses.filter((item) => item.id !== expense.id),
   }
+  next = removeIdFromLedgerDayOrder(next, expense.id)
   return { store: replaceGroup(store, next), group: next }
 }
 
@@ -437,7 +471,37 @@ export function addPayment(
     voidedAt: null,
     voidedByProfileId: null,
   }
-  const next: Group = { ...group, payments: [payment, ...(group.payments ?? [])] }
+  let next: Group = { ...group, payments: [payment, ...(group.payments ?? [])] }
+  next = appendLedgerDayOrder(next, payment.date, payment.id)
+  return { store: replaceGroup(store, next), group: next }
+}
+
+export function reorderLedgerDay(
+  store: Store,
+  input: {
+    groupId: string
+    profileId: string
+    date: string
+    orderedIds: string[]
+  }
+) {
+  const profile = store.profiles.find((item) => item.id === input.profileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const group = requireGroup(store, input.groupId)
+  requireSeated(group, profile.id)
+  requireDate(input.date)
+  const day = ledgerDaysForViewer(group, null).find((item) => item.date === input.date)
+  if (!day) throw new Error("No ledger rows for that date.")
+  const expected = expectedLedgerDayIds(day)
+  const ordered = [...new Set(input.orderedIds)]
+  if (ordered.length !== expected.length) {
+    throw new Error("Order must include every row for that day.")
+  }
+  const expectedSet = new Set(expected)
+  if (!ordered.every((id) => expectedSet.has(id))) {
+    throw new Error("Order includes unknown or duplicate rows.")
+  }
+  const next = setLedgerDayOrder(group, input.date, ordered)
   return { store: replaceGroup(store, next), group: next }
 }
 
@@ -499,6 +563,7 @@ export function importTripCsv(
     members: parsed.members,
     expenses: parsed.expenses,
     payments: parsed.payments,
+    ledgerDayOrder: undefined,
   }
   return { store: replaceGroup(store, normalizeGroup(next)), group: normalizeGroup(next) }
 }
@@ -570,4 +635,335 @@ export function suggestedMember(group: Group, profileName: string) {
     group.members.find((member) => !member.profileId && member.name.toLowerCase().includes(needle)) ??
     null
   )
+}
+
+function joinRequests(store: Store): JoinRequest[] {
+  return store.joinRequests ?? []
+}
+
+function tripInvites(store: Store): TripInvite[] {
+  return store.tripInvites ?? []
+}
+
+function replaceStoreMeta(
+  store: Store,
+  meta: { tripInvites?: TripInvite[]; joinRequests?: JoinRequest[] }
+): Store {
+  return {
+    ...store,
+    tripInvites: meta.tripInvites ?? store.tripInvites ?? [],
+    joinRequests: meta.joinRequests ?? store.joinRequests ?? [],
+  }
+}
+
+export function sendTripInvite(
+  store: Store,
+  input: {
+    groupId: string
+    profileId: string
+    email?: string | null
+    phone?: string | null
+  }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only the trip admin can send invites.")
+  }
+  requireSeated(group, input.profileId)
+  let invitedEmail = normalizeInviteEmail(input.email)
+  let invitedPhone = normalizeInvitePhone(input.phone)
+  if (!invitedEmail && !invitedPhone && input.email?.trim()) {
+    const found = findProfileForContactSearch(store, input.email.trim())
+    if (found) {
+      invitedEmail = normalizeInviteEmail(found.email)
+      invitedPhone = normalizeInvitePhone(found.phone)
+    }
+  }
+  if (!invitedEmail && !invitedPhone && input.phone?.trim()) {
+    const found = findProfileForContactSearch(store, input.phone.trim())
+    if (found) {
+      invitedEmail = normalizeInviteEmail(found.email)
+      invitedPhone = normalizeInvitePhone(found.phone)
+    }
+  }
+  if (!invitedEmail && !invitedPhone) {
+    throw new Error("Enter an email, phone, or @username to invite.")
+  }
+  const invite: TripInvite = {
+    id: uid("inv"),
+    groupId: group.id,
+    invitedEmail,
+    invitedPhone,
+    status: "pending",
+    createdByProfileId: input.profileId,
+    createdAt: nowIso(),
+    respondedAt: null,
+    respondedByProfileId: null,
+  }
+  let next = replaceStoreMeta(store, {
+    tripInvites: [...tripInvites(store), invite],
+  })
+  const target =
+    store.profiles.find((item) => profileMatchesInvite(item, invite)) ?? null
+  if (target) {
+    next = upsertContactInStore(next, {
+      ownerProfileId: input.profileId,
+      targetProfileId: target.id,
+      source: "invite",
+    })
+  }
+  return { store: next, group, invite }
+}
+
+export function addContact(
+  store: Store,
+  input: {
+    ownerProfileId: string
+    targetProfileId?: string
+    query?: string
+    source?: ContactSource
+  }
+) {
+  const owner = store.profiles.find((item) => item.id === input.ownerProfileId)
+  if (!owner) throw new Error("Set up your profile first.")
+  let targetId = input.targetProfileId?.trim()
+  if (!targetId && input.query) {
+    const found = findProfileForContactSearch(store, input.query)
+    if (!found) throw new Error("No profile matches that username, email, or phone.")
+    targetId = found.id
+  }
+  if (!targetId) throw new Error("Choose someone to add.")
+  const target = store.profiles.find((item) => item.id === targetId)
+  if (!target) throw new Error("Profile not found.")
+  const source = input.source ?? (input.query ? "search" : "search")
+  const next = upsertContactInStore(store, {
+    ownerProfileId: owner.id,
+    targetProfileId: target.id,
+    source,
+  })
+  return {
+    store: next,
+    contacts: listContactsForProfile(next, owner.id),
+  }
+}
+
+export function removeContact(
+  store: Store,
+  input: { ownerProfileId: string; targetProfileId: string }
+) {
+  const next = removeContactFromStore(
+    store,
+    input.ownerProfileId,
+    input.targetProfileId
+  )
+  return {
+    store: next,
+    contacts: listContactsForProfile(next, input.ownerProfileId),
+  }
+}
+
+export { findProfileForContactSearch, listContactsForProfile } from "@/lib/trip-contacts"
+
+function upsertApprovedJoinRequest(
+  store: Store,
+  groupId: string,
+  profileId: string
+): Store {
+  const existing = joinRequestForProfile(store, groupId, profileId)
+  const list = joinRequests(store)
+  if (existing?.status === "approved") return store
+  const row: JoinRequest = existing
+    ? { ...existing, status: "approved", decidedAt: nowIso(), decidedByProfileId: null }
+    : {
+        id: uid("jr"),
+        groupId,
+        profileId,
+        status: "approved",
+        createdAt: nowIso(),
+        decidedAt: nowIso(),
+        decidedByProfileId: null,
+      }
+  const nextList = existing
+    ? list.map((item) => (item.id === existing.id ? row : item))
+    : [...list, row]
+  return replaceStoreMeta(store, { joinRequests: nextList })
+}
+
+export function acceptTripInvite(
+  store: Store,
+  input: { inviteId: string; profileId: string }
+) {
+  const profile = store.profiles.find((item) => item.id === input.profileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const invite = tripInvites(store).find((item) => item.id === input.inviteId)
+  if (!invite) throw new Error("Invite not found.")
+  if (invite.status !== "pending") throw new Error("That invite is no longer open.")
+  if (!profileMatchesInvite(profile, invite)) {
+    throw new Error("This invite is for a different email or phone.")
+  }
+  if (isGroupMember(input.profileId, requireGroup(store, invite.groupId))) {
+    throw new Error("You are already on this trip.")
+  }
+  const updatedInvites = tripInvites(store).map((item) =>
+    item.id === invite.id
+      ? {
+          ...item,
+          status: "accepted" as const,
+          respondedAt: nowIso(),
+          respondedByProfileId: profile.id,
+        }
+      : item
+  )
+  let next = replaceStoreMeta(store, { tripInvites: updatedInvites })
+  next = upsertApprovedJoinRequest(next, invite.groupId, profile.id)
+  const group = requireGroup(next, invite.groupId)
+  return { store: next, group, inviteId: invite.id }
+}
+
+export function declineTripInvite(
+  store: Store,
+  input: { inviteId: string; profileId: string }
+) {
+  const profile = store.profiles.find((item) => item.id === input.profileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const invite = tripInvites(store).find((item) => item.id === input.inviteId)
+  if (!invite) throw new Error("Invite not found.")
+  if (invite.status !== "pending") throw new Error("That invite is no longer open.")
+  if (!profileMatchesInvite(profile, invite)) {
+    throw new Error("This invite is for a different email or phone.")
+  }
+  const updatedInvites = tripInvites(store).map((item) =>
+    item.id === invite.id
+      ? {
+          ...item,
+          status: "declined" as const,
+          respondedAt: nowIso(),
+          respondedByProfileId: profile.id,
+        }
+      : item
+  )
+  const next = replaceStoreMeta(store, { tripInvites: updatedInvites })
+  return { store: next }
+}
+
+export function revokeTripInvite(
+  store: Store,
+  input: { groupId: string; inviteId: string; profileId: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only the trip admin can revoke invites.")
+  }
+  const invite = tripInvites(store).find((item) => item.id === input.inviteId)
+  if (!invite || invite.groupId !== group.id) throw new Error("Invite not found.")
+  const updatedInvites = tripInvites(store).map((item) =>
+    item.id === invite.id
+      ? { ...item, status: "revoked" as const, respondedAt: nowIso() }
+      : item
+  )
+  const next = replaceStoreMeta(store, { tripInvites: updatedInvites })
+  return { store: next, group: next.groups.find((g) => g.id === group.id)! }
+}
+
+export function requestJoin(
+  store: Store,
+  input: { groupId: string; profileId: string; code: string }
+) {
+  const profile = store.profiles.find((item) => item.id === input.profileId)
+  if (!profile) throw new Error("Set up your profile first.")
+  const group = requireGroup(store, input.groupId)
+  if (normalizeJoinCode(input.code) !== normalizeJoinCode(group.code)) {
+    throw new Error("Join code does not match this trip.")
+  }
+  if (isGroupMember(input.profileId, group)) {
+    throw new Error("You are already on this trip.")
+  }
+  const existing = joinRequestForProfile(store, group.id, profile.id)
+  if (existing?.status === "pending") {
+    return { store, group, joinRequest: existing }
+  }
+  if (existing?.status === "approved") {
+    return { store, group, joinRequest: existing }
+  }
+  const joinRequest: JoinRequest = {
+    id: uid("jr"),
+    groupId: group.id,
+    profileId: profile.id,
+    status: "pending",
+    createdAt: nowIso(),
+    decidedAt: null,
+    decidedByProfileId: null,
+  }
+  const next = replaceStoreMeta(store, {
+    joinRequests: [...joinRequests(store), joinRequest],
+  })
+  return { store: next, group, joinRequest }
+}
+
+function normalizeJoinCode(raw: string) {
+  return raw.trim().toUpperCase()
+}
+
+export function approveJoinRequest(
+  store: Store,
+  input: { groupId: string; requestId: string; profileId: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only the trip admin can approve join requests.")
+  }
+  const request = joinRequests(store).find((item) => item.id === input.requestId)
+  if (!request || request.groupId !== group.id) throw new Error("Join request not found.")
+  if (request.status !== "pending") throw new Error("That request was already decided.")
+  const updated = joinRequests(store).map((item) =>
+    item.id === request.id
+      ? {
+          ...item,
+          status: "approved" as const,
+          decidedAt: nowIso(),
+          decidedByProfileId: input.profileId,
+        }
+      : item
+  )
+  const next = replaceStoreMeta(store, { joinRequests: updated })
+  return { store: next, group: requireGroup(next, group.id) }
+}
+
+export function rejectJoinRequest(
+  store: Store,
+  input: { groupId: string; requestId: string; profileId: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only the trip admin can reject join requests.")
+  }
+  const request = joinRequests(store).find((item) => item.id === input.requestId)
+  if (!request || request.groupId !== group.id) throw new Error("Join request not found.")
+  if (request.status !== "pending") throw new Error("That request was already decided.")
+  const updated = joinRequests(store).map((item) =>
+    item.id === request.id
+      ? {
+          ...item,
+          status: "rejected" as const,
+          decidedAt: nowIso(),
+          decidedByProfileId: input.profileId,
+        }
+      : item
+  )
+  const next = replaceStoreMeta(store, { joinRequests: updated })
+  return { store: next, group: requireGroup(next, group.id) }
+}
+
+export function claimMemberWithJoinApproval(
+  store: Store,
+  input: { groupId: string; memberId: string; profileId: string }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (group.joinApprovalRequired && !isGroupMember(input.profileId, group)) {
+    const request = joinRequestForProfile(store, group.id, input.profileId)
+    if (!request || request.status !== "approved") {
+      throw new Error("Trip admin must approve your join request before you claim a seat.")
+    }
+  }
+  return claimMember(store, input)
 }

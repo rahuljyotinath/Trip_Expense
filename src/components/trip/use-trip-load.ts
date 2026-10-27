@@ -6,7 +6,7 @@ import { profileNeedsSetup } from "@/lib/auth-ops"
 import {
   cachedGroupById,
   drainGroupOutbox,
-  fetchGroup,
+  fetchGroupDetail,
   fetchSessionProfile,
   isNetworkError,
   loadHealth,
@@ -14,7 +14,7 @@ import {
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
-import type { Group, PublicProfile } from "@/lib/types"
+import type { Group, JoinRequest, PublicProfile, TripInvite } from "@/lib/types"
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
@@ -31,6 +31,8 @@ export function useTripLoad(groupId: string, tripPath: string) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [fromCache, setFromCache] = useState(false)
+  const [pendingJoinRequests, setPendingJoinRequests] = useState<JoinRequest[]>([])
+  const [pendingTripInvites, setPendingTripInvites] = useState<TripInvite[]>([])
 
   useEffect(() => {
     startOfflineOutboxSync()
@@ -69,12 +71,14 @@ export function useTripLoad(groupId: string, tripPath: string) {
         setProfile(session)
         syncProfileToLocalStore(session)
         try {
-          const nextGroup = await fetchGroup(groupId, {
+          const detail = await fetchGroupDetail(groupId, {
             skipHealth: true,
             joinCode,
           })
           if (cancelled) return
-          setGroup(nextGroup)
+          setGroup(detail.group)
+          setPendingJoinRequests(detail.pendingJoinRequests)
+          setPendingTripInvites(detail.pendingTripInvites)
           setFromCache(false)
         } catch (err) {
           if (cancelled) return
@@ -101,9 +105,11 @@ export function useTripLoad(groupId: string, tripPath: string) {
     function onOnline() {
       void drainGroupOutbox()
       if (!groupId) return
-      void fetchGroup(groupId, { joinCode })
-        .then((next) => {
-          setGroup(next)
+      void fetchGroupDetail(groupId, { joinCode })
+        .then((detail) => {
+          setGroup(detail.group)
+          setPendingJoinRequests(detail.pendingJoinRequests)
+          setPendingTripInvites(detail.pendingTripInvites)
           setFromCache(false)
         })
         .catch(() => {
@@ -116,10 +122,12 @@ export function useTripLoad(groupId: string, tripPath: string) {
 
   async function refreshGroup() {
     if (!groupId) return null
-    const next = await fetchGroup(groupId, { joinCode })
-    setGroup(next)
+    const detail = await fetchGroupDetail(groupId, { joinCode })
+    setGroup(detail.group)
+    setPendingJoinRequests(detail.pendingJoinRequests)
+    setPendingTripInvites(detail.pendingTripInvites)
     setFromCache(false)
-    return next
+    return detail.group
   }
 
   return {
@@ -130,6 +138,8 @@ export function useTripLoad(groupId: string, tripPath: string) {
     loadError,
     loading,
     fromCache,
+    pendingJoinRequests,
+    pendingTripInvites,
     refreshGroup,
   }
 }

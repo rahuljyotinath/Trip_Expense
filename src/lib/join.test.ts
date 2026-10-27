@@ -17,3 +17,10 @@ test("parseJoinInput empty", () => {
   assert.equal(parseJoinInput(""), "")
   assert.equal(parseJoinInput("   "), "")
 })
+
+test("parseJoinInput trip URL with join query", () => {
+  assert.equal(
+    parseJoinInput("https://app.example/trip/g_abc?join=ABCDEF"),
+    "ABCDEF"
+  )
+})

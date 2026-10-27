@@ -46,6 +46,42 @@ export type Payment = {
   voidedByProfileId: string | null
 }
 
+export type TripInviteStatus = "pending" | "accepted" | "declined" | "revoked"
+
+export type TripInvite = {
+  id: string
+  groupId: string
+  invitedEmail: string | null
+  invitedPhone: string | null
+  status: TripInviteStatus
+  createdByProfileId: string
+  createdAt: string
+  respondedAt: string | null
+  respondedByProfileId: string | null
+}
+
+export type JoinRequestStatus = "pending" | "approved" | "rejected"
+
+export type ContactSource = "search" | "trip" | "invite"
+
+export type Contact = {
+  id: string
+  ownerProfileId: string
+  targetProfileId: string
+  source: ContactSource
+  createdAt: string
+}
+
+export type JoinRequest = {
+  id: string
+  groupId: string
+  profileId: string
+  status: JoinRequestStatus
+  createdAt: string
+  decidedAt: string | null
+  decidedByProfileId: string | null
+}
+
 export type Group = {
   id: string
   name: string
@@ -58,11 +94,18 @@ export type Group = {
   members: Member[]
   expenses: Expense[]
   payments: Payment[]
+  /** Custom row order within a calendar date (expense + payment ids). */
+  ledgerDayOrder?: Record<string, string[]>
+  /** When true, code join creates a pending request until admin approves. */
+  joinApprovalRequired?: boolean
 }
 
 export type Store = {
   profiles: Profile[]
   groups: Group[]
+  tripInvites?: TripInvite[]
+  joinRequests?: JoinRequest[]
+  contacts?: Contact[]
 }
 
 export type StorageMode = "postgres" | "local" | "unconfigured"
@@ -133,6 +176,38 @@ export function normalizeGroup(group: Group): Group {
     members: (group.members ?? []).map(normalizeMember),
     expenses: (group.expenses ?? []).map(normalizeExpense),
     payments: (group.payments ?? []).map(normalizePayment),
+    ledgerDayOrder: group.ledgerDayOrder ?? undefined,
+    joinApprovalRequired: group.joinApprovalRequired ?? false,
+  }
+}
+
+function normalizeTripInvite(invite: TripInvite): TripInvite {
+  return {
+    ...invite,
+    invitedEmail: invite.invitedEmail ?? null,
+    invitedPhone: invite.invitedPhone ?? null,
+    status: invite.status ?? "pending",
+    respondedAt: invite.respondedAt ?? null,
+    respondedByProfileId: invite.respondedByProfileId ?? null,
+  }
+}
+
+function normalizeContact(contact: Contact): Contact {
+  return {
+    ...contact,
+    source:
+      contact.source === "trip" || contact.source === "invite"
+        ? contact.source
+        : "search",
+  }
+}
+
+function normalizeJoinRequest(request: JoinRequest): JoinRequest {
+  return {
+    ...request,
+    status: request.status ?? "pending",
+    decidedAt: request.decidedAt ?? null,
+    decidedByProfileId: request.decidedByProfileId ?? null,
   }
 }
 
@@ -140,5 +215,8 @@ export function normalizeStore(store: Store): Store {
   return {
     profiles: (store.profiles ?? []).map(normalizeProfile),
     groups: (store.groups ?? []).map(normalizeGroup),
+    tripInvites: (store.tripInvites ?? []).map(normalizeTripInvite),
+    joinRequests: (store.joinRequests ?? []).map(normalizeJoinRequest),
+    contacts: (store.contacts ?? []).map(normalizeContact),
   }
 }

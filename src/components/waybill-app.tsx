@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle,
@@ -10,13 +10,16 @@ import {
   ChevronDown,
   Compass,
   Download,
+  KeyRound,
   Link2,
   Sparkles,
   Upload,
   Users,
+  GripVertical,
   Pencil,
   Plus,
   Receipt,
+  RotateCcw,
   Trash2,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -42,6 +45,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { formatTripDates } from "@/components/trip/trip-format"
+import {
+  TripPageChrome,
+  type TripTabId,
+} from "@/components/trip/trip-page-chrome"
 import { tripDeskScrollClass, tripTabPanelClass } from "@/components/trip/trip-desk-layout"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -50,6 +58,12 @@ import {
   drainGroupOutbox,
   fetchGroup,
   fetchGroupByCode,
+  fetchPendingTripInvites,
+  respondTripInvite,
+  fetchKnownContacts,
+  addKnownContact,
+  removeKnownContact,
+  type KnownContact,
   fetchMyGroups,
   loadHealth,
   logoutUser,
@@ -62,14 +76,12 @@ import {
   type Health,
 } from "@/lib/client-api"
 import {
+  expenseRowMeta,
   expenseViewerSecondAmount,
-  groupPaidByMember,
   ledgerDayItems,
   ledgerDaysForViewer,
   ledgerPersonalExpensesForViewer,
-  paidBackReceivedForMember,
   paymentViewerTone,
-  personalExpenditureForMember,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
@@ -79,7 +91,9 @@ import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
 import { profileNeedsSetup } from "@/lib/auth-ops"
-import type { Expense, Group, PublicProfile } from "@/lib/types"
+import type { Expense, Group, JoinRequest, Payment, PublicProfile } from "@/lib/types"
+
+export { formatTripDates } from "@/components/trip/trip-format"
 
 type Screen = "boot" | "home" | "create" | "join"
 
@@ -107,32 +121,11 @@ function formatDayDots(isoDate: string) {
   return `${d.padStart(2, "0")}.${m.padStart(2, "0")}.${y}`
 }
 
-export function formatTripDates(group: Group) {
-  const { startDate, endDate } = group
-  if (!startDate && !endDate) return null
-  if (startDate && endDate) {
-    const start = new Date(`${startDate}T00:00:00`)
-    const end = new Date(`${endDate}T00:00:00`)
-    const sameYear =
-      !Number.isNaN(start.getTime()) &&
-      !Number.isNaN(end.getTime()) &&
-      start.getFullYear() === end.getFullYear()
-    const startLabel = start.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      ...(sameYear ? {} : { year: "numeric" }),
-    })
-    return `${startLabel} – ${formatDay(endDate)}`
-  }
-  if (startDate) return `From ${formatDay(startDate)}`
-  return `Until ${formatDay(endDate!)}`
-}
-
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
 }
 
-function applyGroupPatchOptimistic(input: {
+export function applyGroupPatchOptimistic(input: {
   group: Group
   profile: PublicProfile
   body: Record<string, unknown>
@@ -184,6 +177,11 @@ export function WaybillApp() {
   const [personDraft, setPersonDraft] = useState("")
   const [code, setCode] = useState(joinFromUrl)
   const [joinGroup, setJoinGroup] = useState<Group | null>(null)
+  const [joinRequest, setJoinRequest] = useState<JoinRequest | null>(null)
+  const [pendingInvites, setPendingInvites] = useState<
+    Awaited<ReturnType<typeof fetchPendingTripInvites>>
+  >([])
+  const [knownContacts, setKnownContacts] = useState<KnownContact[]>([])
 
   async function refreshGroups(nextProfile: PublicProfile) {
     const list = await fetchMyGroups(nextProfile.id)
@@ -215,7 +213,7 @@ export function WaybillApp() {
           try {
             const invited = await fetchGroupByCode(joinFromUrl)
             router.replace(
-              `/trip/${invited.id}?join=${encodeURIComponent(joinFromUrl)}`
+              `/trip/${invited.group.id}?join=${encodeURIComponent(joinFromUrl)}`
             )
           } catch {
             setCode(joinFromUrl)
@@ -236,6 +234,16 @@ export function WaybillApp() {
         setProfile(session)
         syncProfileToLocalStore(session)
         await refreshGroups(session)
+        try {
+          setPendingInvites(await fetchPendingTripInvites())
+        } catch {
+          setPendingInvites([])
+        }
+        try {
+          setKnownContacts(await fetchKnownContacts())
+        } catch {
+          setKnownContacts([])
+        }
         setScreen("home")
       } catch (err) {
         if (!cancelled) {
@@ -321,10 +329,12 @@ export function WaybillApp() {
     setBusy(true)
     setError(null)
     try {
-      const next = await fetchGroupByCode(parseJoinInput(code))
-      setJoinGroup(next)
+      const lookup = await fetchGroupByCode(parseJoinInput(code))
+      setJoinGroup(lookup.group)
+      setJoinRequest(lookup.joinRequest)
     } catch (err) {
       setJoinGroup(null)
+      setJoinRequest(null)
       setError(errorText(err))
     } finally {
       setBusy(false)
@@ -380,6 +390,61 @@ export function WaybillApp() {
           profile={profile}
           groups={groups}
           busy={busy}
+          pendingInvites={pendingInvites}
+          knownContacts={knownContacts}
+          onAddContact={async (query) => {
+            setBusy(true)
+            setError(null)
+            try {
+              setKnownContacts(await addKnownContact({ query }))
+            } catch (err) {
+              setError(errorText(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+          onRemoveContact={async (targetProfileId) => {
+            setBusy(true)
+            setError(null)
+            try {
+              setKnownContacts(await removeKnownContact(targetProfileId))
+            } catch (err) {
+              setError(errorText(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+          onInviteAccept={async (inviteId) => {
+            if (!profile) return
+            setBusy(true)
+            setError(null)
+            try {
+              const group = await respondTripInvite("accept", inviteId)
+              setPendingInvites(await fetchPendingTripInvites())
+              if (group) {
+                const lookup = await fetchGroupByCode(group.code)
+                setJoinGroup(lookup.group)
+                setJoinRequest(lookup.joinRequest)
+                setCode(group.code)
+                setScreen("join")
+              }
+            } catch (err) {
+              setError(errorText(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
+          onInviteDecline={async (inviteId) => {
+            setBusy(true)
+            try {
+              await respondTripInvite("decline", inviteId)
+              setPendingInvites(await fetchPendingTripInvites())
+            } catch (err) {
+              setError(errorText(err))
+            } finally {
+              setBusy(false)
+            }
+          }}
           onCreate={() => {
             setError(null)
             setPeople(profile.name ? [profile.name] : [])
@@ -388,6 +453,7 @@ export function WaybillApp() {
           onJoin={() => {
             setError(null)
             setJoinGroup(null)
+            setJoinRequest(null)
             setScreen("join")
           }}
           onOpen={openExisting}
@@ -423,9 +489,40 @@ export function WaybillApp() {
           profile={profile}
           code={code}
           group={joinGroup}
+          joinRequest={joinRequest}
           busy={busy}
           onCode={setCode}
           onLookup={onLookupCode}
+          onRequestJoin={() => {
+            if (!joinGroup) return
+            setBusy(true)
+            setError(null)
+            commitGroupPatch(
+              joinGroup,
+              {
+                action: "request-join",
+                code: parseJoinInput(code),
+                profileId: profile.id,
+              },
+              {
+                onApplied: async (next) => {
+                  setJoinGroup(next)
+                  try {
+                    const lookup = await fetchGroupByCode(parseJoinInput(code))
+                    setJoinRequest(lookup.joinRequest)
+                  } catch {
+                    /* keep optimistic */
+                  }
+                  setBusy(false)
+                },
+                onError: (message) => {
+                  setError(message)
+                  setBusy(false)
+                },
+              },
+              profile
+            )
+          }}
           onClaim={onClaim}
           onBack={() => setScreen("home")}
         />
@@ -566,6 +663,12 @@ function Home({
   profile,
   groups,
   busy,
+  pendingInvites,
+  knownContacts,
+  onAddContact,
+  onRemoveContact,
+  onInviteAccept,
+  onInviteDecline,
   onCreate,
   onJoin,
   onOpen,
@@ -573,12 +676,56 @@ function Home({
   profile: PublicProfile
   groups: Group[]
   busy: boolean
+  pendingInvites: Awaited<ReturnType<typeof fetchPendingTripInvites>>
+  knownContacts: KnownContact[]
+  onAddContact: (query: string) => void
+  onRemoveContact: (targetProfileId: string) => void
+  onInviteAccept: (inviteId: string) => void
+  onInviteDecline: (inviteId: string) => void
   onCreate: () => void
   onJoin: () => void
   onOpen: (id: string) => void
 }) {
+  const [contactQuery, setContactQuery] = useState("")
   return (
     <div className="space-y-6">
+      {pendingInvites.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Trip invites</CardTitle>
+            <CardDescription>
+              You were invited by email or phone. Accept to claim a seat on the roster.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingInvites.map((invite) => (
+              <div
+                key={invite.id}
+                className="flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p className="font-medium">{invite.tripName}</p>
+                <span className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => onInviteAccept(invite.id)}
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => onInviteDecline(invite.id)}
+                  >
+                    Decline
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
       <div>
         <h2 className="font-heading text-3xl">Hey {profile.name}.</h2>
         <p className="mt-1 max-w-xl text-muted-foreground">
@@ -595,10 +742,70 @@ function Home({
           Open a trip
         </Button>
         <Button size="lg" variant="outline" onClick={onJoin}>
-          <Link2 className="size-4" />
-          Join with a link
+          <KeyRound className="size-4" />
+          Join with a code
         </Button>
       </div>
+      <Separator />
+      <Card>
+        <CardHeader>
+          <CardTitle>Known contacts</CardTitle>
+          <CardDescription>
+            People you saved. Exact @username, email, or phone — not a public directory.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              placeholder="@username, email, or phone"
+              value={contactQuery}
+              disabled={busy}
+              onChange={(event) => setContactQuery(event.target.value)}
+            />
+            <Button
+              variant="outline"
+              disabled={busy || !contactQuery.trim()}
+              onClick={() => {
+                const q = contactQuery.trim()
+                if (!q) return
+                void onAddContact(q)
+                setContactQuery("")
+              }}
+            >
+              Add contact
+            </Button>
+          </div>
+          {knownContacts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Shared trips with linked profiles appear here automatically.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {knownContacts.map((contact) => (
+                <li
+                  key={contact.contactId}
+                  className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
+                >
+                  <span>
+                    <span className="font-medium">{contact.name}</span>
+                    {contact.username ? (
+                      <span className="text-muted-foreground"> @{contact.username}</span>
+                    ) : null}
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => onRemoveContact(contact.id)}
+                  >
+                    Remove
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
       <Separator />
       {groups.length === 0 ? (
         <EmptyTrips />
@@ -633,8 +840,8 @@ function EmptyTrips() {
       <CardHeader>
         <CardTitle>No trips on this seat</CardTitle>
         <CardDescription>
-          Open one and list every person who will spend. Or ask for the invite
-          link from whoever already did.
+          Open one and list every person who will spend. Or ask for the trip
+          join code from whoever already did.
         </CardDescription>
       </CardHeader>
     </Card>
@@ -810,38 +1017,57 @@ function JoinTrip({
   profile,
   code,
   group,
+  joinRequest,
   busy,
   onCode,
   onLookup,
+  onRequestJoin,
   onClaim,
   onBack,
 }: {
   profile: PublicProfile
   code: string
   group: Group | null
+  joinRequest: JoinRequest | null
   busy: boolean
   onCode: (value: string) => void
   onLookup: () => void
+  onRequestJoin: () => void
   onClaim: (memberId: string) => void
   onBack: () => void
 }) {
   const suggestion = group ? suggestedMember(group, profile.name) : null
+  const alreadySeated =
+    group?.members.some((member) => member.profileId === profile.id) ?? false
+  const needsApproval = Boolean(group?.joinApprovalRequired)
+  const canClaim =
+    group &&
+    !alreadySeated &&
+    (!needsApproval || joinRequest?.status === "approved")
+  const showRequest =
+    group &&
+    !alreadySeated &&
+    needsApproval &&
+    (!joinRequest || joinRequest.status === "rejected")
 
   return (
     <Card className="max-w-xl">
       <CardHeader>
-        <CardTitle className="font-heading text-3xl">Walk into a trip.</CardTitle>
+        <CardTitle className="font-heading text-3xl">Join a trip</CardTitle>
         <CardDescription>
-          Paste the invite link someone sent you. Then pick the name that is
-          you. If they spelled you wrong, still pick the closest seat — that is
-          the match.
+          Enter the join code from the trip header (six letters). Then claim the
+          nickname that is you on the roster.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">
           <Input
             value={code}
-            placeholder="https://…/trip/… or ?join=…"
+            placeholder="ABCDEF"
+            className="font-mono uppercase tracking-widest"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={32}
             onChange={(event) => onCode(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") onLookup()
@@ -855,10 +1081,34 @@ function JoinTrip({
           <div className="space-y-3">
             <div>
               <p className="font-heading text-2xl">{group.name}</p>
-              <p className="text-sm text-muted-foreground">
-                Claim one open name. Occupied seats stay occupied.
-              </p>
+              {alreadySeated ? (
+                <p className="text-sm text-muted-foreground">
+                  You already have a seat on this trip.
+                </p>
+              ) : joinRequest?.status === "pending" ? (
+                <p className="text-sm text-muted-foreground">
+                  Waiting for the trip admin to approve your join request.
+                </p>
+              ) : joinRequest?.status === "rejected" ? (
+                <p className="text-sm text-stamp">
+                  Your join request was declined. You can request again.
+                </p>
+              ) : needsApproval && joinRequest?.status !== "approved" ? (
+                <p className="text-sm text-muted-foreground">
+                  This trip requires admin approval before you claim a nickname.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Claim one open nickname. Occupied seats stay taken.
+                </p>
+              )}
             </div>
+            {showRequest ? (
+              <Button disabled={busy} onClick={onRequestJoin}>
+                Request to join
+              </Button>
+            ) : null}
+            {canClaim ? (
             <div className="space-y-2">
               {group.members.map((member) => {
                 const taken = Boolean(member.profileId)
@@ -885,6 +1135,7 @@ function JoinTrip({
                 )
               })}
             </div>
+            ) : null}
           </div>
         ) : null}
         <Button variant="ghost" onClick={onBack}>
@@ -895,163 +1146,14 @@ function JoinTrip({
   )
 }
 
-function TripSummaryStrip({
-  group,
-  seatId,
-}: {
-  group: Group
-  seatId: string | null
-}) {
-  const stats = useMemo(() => tripStats(group), [group])
-  const personalSpendTotal = useMemo(
-    () => (seatId ? personalExpenditureForMember(group, seatId) : 0),
-    [group, seatId]
-  )
-  const groupPaidTotal = useMemo(
-    () =>
-      seatId
-        ? (groupPaidByMember(group).find((row) => row.memberId === seatId)?.amount ?? 0)
-        : 0,
-    [group, seatId]
-  )
-  const receivedTotal = useMemo(
-    () => (seatId ? paidBackReceivedForMember(group, seatId) : 0),
-    [group, seatId]
-  )
-  const mine = seatId ? stats.byMember[seatId] : null
-  const net = mine?.net ?? 0
-  const balance =
-    Math.abs(net) < 0.02
-      ? { label: "Balance", text: "Even", className: "text-muted-foreground" }
-      : net < 0
-        ? {
-            label: "You owe",
-            text: formatMoney(Math.abs(net), group.currency),
-            className: "text-stamp",
-          }
-        : {
-            label: "You're owed",
-            text: formatMoney(net, group.currency),
-            className: "text-moss",
-          }
-
-  return (
-    <div className="rounded-xl border bg-card/50 px-3 py-2 lg:px-4 lg:py-2.5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-2">
-        <div>
-          <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-            Trip spend
-          </p>
-          <p className="font-heading text-lg lg:text-xl">
-            {formatMoney(stats.totalSpend, group.currency)}
-          </p>
-        </div>
-        {seatId && mine ? (
-          <>
-            <div>
-              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
-                Your share
-              </p>
-              <p className="font-heading text-lg lg:text-xl">
-                {formatMoney(mine.share, group.currency)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-                You paid (group)
-              </p>
-              <p className="font-heading text-lg lg:text-xl">
-                {formatMoney(groupPaidTotal, group.currency)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-                You received
-              </p>
-              <p className="font-heading text-lg lg:text-xl">
-                {formatMoney(receivedTotal, group.currency)}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-                Personal spend
-              </p>
-              <p className="font-heading text-lg lg:text-xl">
-                {formatMoney(personalSpendTotal, group.currency)}
-              </p>
-            </div>
-            <div className="sm:col-span-2 lg:col-span-3">
-              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-                {balance.label}
-              </p>
-              <p className={`font-heading text-lg lg:text-xl ${balance.className}`}>
-                {balance.text}
-              </p>
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground sm:col-span-3">
-            Claim a nickname to see your share, what you paid, and your balance.
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function TripSyncBanner({
-  groupId,
-  fromCache,
-}: {
-  groupId: string
-  fromCache: boolean
-}) {
-  const [pending, setPending] = useState(() => outboxPendingCount(groupId))
-  const [online, setOnline] = useState(
-    () => typeof navigator === "undefined" || navigator.onLine
-  )
-  const [syncing, setSyncing] = useState(false)
-
-  useEffect(() => {
-    setPending(outboxPendingCount(groupId))
-    const unsub = subscribeOutbox(() => setPending(outboxPendingCount(groupId)))
-    function onOnline() {
-      setOnline(true)
-      setSyncing(true)
-      void drainGroupOutbox().finally(() => setSyncing(false))
-    }
-    function onOffline() {
-      setOnline(false)
-      setSyncing(false)
-    }
-    window.addEventListener("online", onOnline)
-    window.addEventListener("offline", onOffline)
-    return () => {
-      unsub()
-      window.removeEventListener("online", onOnline)
-      window.removeEventListener("offline", onOffline)
-    }
-  }, [groupId])
-
-  if (syncing) {
-    return <p className="mt-1 text-xs text-muted-foreground">Syncing…</p>
-  }
-  if (!online || fromCache) {
-    const waiting = pending > 0 ? ` ${pending} waiting to sync.` : ""
-    return (
-      <p className="mt-1 text-xs text-muted-foreground">
-        Saved on this phone.{waiting} Will sync when you're back online.
-      </p>
-    )
-  }
-  if (pending > 0) {
-    return (
-      <p className="mt-1 text-xs text-muted-foreground">
-        {pending} waiting to sync
-      </p>
-    )
-  }
-  return null
+function reorderDayItemIds(ids: string[], dragId: string, targetId: string) {
+  const from = ids.indexOf(dragId)
+  const to = ids.indexOf(targetId)
+  if (from < 0 || to < 0 || from === to) return ids
+  const next = [...ids]
+  next.splice(from, 1)
+  next.splice(to, 0, dragId)
+  return next
 }
 
 export function TripDesk({
@@ -1073,6 +1175,8 @@ export function TripDesk({
   onBusy,
   onClaim,
   fromCache = false,
+  pendingJoinRequests = [],
+  pendingTripInvites = [],
 }: {
   profile: PublicProfile | null
   group: Group
@@ -1092,9 +1196,16 @@ export function TripDesk({
   onBusy: (value: boolean) => void
   onClaim?: (memberId: string) => void
   fromCache?: boolean
+  pendingJoinRequests?: Array<JoinRequest & { profileName?: string }>
+  pendingTripInvites?: import("@/lib/types").TripInvite[]
 }) {
   const seat = profile ? mySeat(group, profile.id) : null
   const isOpener = profile ? group.createdByProfileId === profile.id : false
+  const isAdmin = isOpener
+  const [inviteEmail, setInviteEmail] = useState("")
+  const [invitePhone, setInvitePhone] = useState("")
+  const [inviteContactId, setInviteContactId] = useState("")
+  const [knownContacts, setKnownContacts] = useState<KnownContact[]>([])
   const canWrite = Boolean(profile && seat)
   const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
   const balances = useMemo(() => settlementBalances(group), [group])
@@ -1109,12 +1220,20 @@ export function TripDesk({
   )
   const memberIds = useMemo(() => group.members.map((member) => member.id), [group.members])
   const viewerMemberId = seat?.id ?? null
-  const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [draftExpenseDate, setDraftExpenseDate] = useState<string | null>(null)
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
+  const [dragRowId, setDragRowId] = useState<string | null>(null)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set())
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get("tab")
+  const deskTab: TripTabId =
+    tabParam === "settle" || tabParam === "people" ? tabParam : "ledger"
+  function tabHref(tab: "settle" | "ledger" | "people") {
+    return tab === "ledger" ? tripPath : `${tripPath}?tab=${tab}`
+  }
 
   function toggleDayCollapsed(date: string) {
     setCollapsedDays((prev) => {
@@ -1139,13 +1258,22 @@ export function TripDesk({
     onExpenseOpen(true)
   }
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
-  const importInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     document.title = `${group.name} — Trip Expenses Balancer`
     return () => {
       document.title = "Trip Expenses Balancer"
     }
   }, [group.name])
+
+  useEffect(() => {
+    if (!isAdmin || !profile?.id) {
+      setKnownContacts([])
+      return
+    }
+    void fetchKnownContacts()
+      .then(setKnownContacts)
+      .catch(() => setKnownContacts([]))
+  }, [isAdmin, profile?.id])
 
   useEffect(() => {
     function scrollToLedgerHash() {
@@ -1163,125 +1291,31 @@ export function TripDesk({
     return () => window.removeEventListener("hashchange", scrollToLedgerHash)
   }, [group.id])
 
-  const analyticsPath = `${tripPath}/analytics`
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className={`flex flex-col gap-3 lg:gap-3 ${tripDeskScrollClass}`}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <h2 className="font-heading text-2xl tracking-tight sm:text-3xl lg:text-2xl">
-              {group.name}
-            </h2>
-            {tripDates ? (
-              <p className="text-sm text-muted-foreground">{tripDates}</p>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {seat
-              ? `You: ${seat.name}.`
-              : "Claim a nickname to log spends."}
-            {isOpener ? (
-              <>
-                {" · "}
-                <button
-                  type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
-                  onClick={() => setTripEditOpen(true)}
-                >
-                  Edit trip
-                </button>
-              </>
-            ) : null}
-          </p>
-          <TripSyncBanner groupId={group.id} fromCache={fromCache} />
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:gap-2">
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-1.5">
-            <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
-              Join code
-            </span>
-            <span className="font-mono text-sm font-semibold tracking-widest tabular-nums">
-              {group.code}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              onClick={() => onCopy(group.code)}
-            >
-              {copied ? <Check /> : <Link2 />}
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          {profile && isOpener ? (
-            <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
-              <Download /> Export CSV
-            </Button>
-          ) : null}
-          {isOpener && profile ? (
-            <>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0]
-                  event.target.value = ""
-                  if (!file) return
-                  try {
-                    const text = await file.text()
-                    parseTripCsv(text)
-                    setImportCsvText(text)
-                  } catch (error) {
-                    onError(
-                      error instanceof Error ? error.message : "Could not read that CSV."
-                    )
-                  }
-                }}
-              />
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => importInputRef.current?.click()}
-              >
-                <Upload /> Import CSV
-              </Button>
-            </>
-          ) : null}
-          {profile ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => onPaymentOpen(true)}
-                disabled={!canWrite}
-              >
-                <Banknote /> Paid back
-              </Button>
-              <Button onClick={() => openNewExpense()} disabled={!canWrite}>
-                <Receipt /> Add spend
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
-
-      <Tabs defaultValue="ledger" className="flex flex-col gap-2">
-        <TabsList className="h-auto shrink-0 flex-wrap gap-1 p-[3px]">
-          <TabsTrigger value="settle">Settle</TabsTrigger>
-          <TabsTrigger value="ledger">Ledger</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
-          <Link
-            href={analyticsPath}
-            className="relative inline-flex h-8 items-center justify-center rounded-md border border-transparent px-2.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-colors hover:bg-background/80 hover:text-foreground"
-          >
-            Analytics
-          </Link>
-        </TabsList>
+      <TripPageChrome
+        group={group}
+        profile={profile}
+        tripPath={tripPath}
+        seatId={seat?.id ?? null}
+        isOpener={isOpener}
+        canWrite={canWrite}
+        busy={busy}
+        copied={copied}
+        fromCache={fromCache}
+        activeTab={deskTab}
+        tabHref={tabHref}
+        onCopy={onCopy}
+        onEditTrip={isOpener ? () => setTripEditOpen(true) : undefined}
+        onImportCsvReady={setImportCsvText}
+        onImportCsvError={onError}
+        onPaymentOpen={() => {
+          setEditingPayment(null)
+          onPaymentOpen(true)
+        }}
+        onAddExpense={() => openNewExpense()}
+      >
+      <Tabs value={deskTab} className="flex flex-col gap-2">
         <TabsContent value="settle" className={tripTabPanelClass}>
           <div className="space-y-2">
           {transfers.length === 0 ? (
@@ -1372,29 +1406,46 @@ export function TripDesk({
                       {formatMoney(payment.amount, group.currency)}
                     </p>
                     {canEdit ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => {
-                          applyGroupPatchOptimistic({
-                            group,
-                            profile,
-                            body: {
-                              action: "void-payment",
-                              paymentId: payment.id,
-                              profileId: profile.id,
-                              restore: crossed,
-                            },
-                            onGroup,
-                            onError,
-                            onBusy,
-                            refresh: onRefresh,
-                          })
-                        }}
-                      >
-                        {crossed ? "Count again" : "Cross out"}
-                      </Button>
+                      <span className="flex shrink-0 gap-0.5">
+                        {!crossed ? (
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            disabled={busy}
+                            aria-label="Edit paid-back"
+                            onClick={() => {
+                              setEditingPayment(payment)
+                              onPaymentOpen(true)
+                            }}
+                          >
+                            <Pencil />
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={busy}
+                          aria-label={crossed ? "Restore paid-back" : "Delete paid-back"}
+                          onClick={() => {
+                            applyGroupPatchOptimistic({
+                              group,
+                              profile,
+                              body: {
+                                action: "void-payment",
+                                paymentId: payment.id,
+                                profileId: profile.id,
+                                restore: crossed,
+                              },
+                              onGroup,
+                              onError,
+                              onBusy,
+                              refresh: onRefresh,
+                            })
+                          }}
+                        >
+                          {crossed ? <RotateCcw /> : <Trash2 />}
+                        </Button>
+                      </span>
                     ) : null}
                   </div>
                 )
@@ -1500,7 +1551,46 @@ export function TripDesk({
                     </div>
                     {!collapsed ? (
                       <div className="divide-y divide-border/60">
-                        {ledgerDayItems(day).map((item) => {
+                        {(() => {
+                          const dayItems = ledgerDayItems(day, group.ledgerDayOrder)
+                          function applyDayReorder(dragId: string, targetId: string) {
+                            if (!profile || !canWrite) return
+                            const ids = dayItems.map((row) =>
+                              row.kind === "expense" ? row.expense.id : row.payment.id
+                            )
+                            applyGroupPatchOptimistic({
+                              group,
+                              profile,
+                              body: {
+                                action: "reorder-ledger-day",
+                                date: day.date,
+                                orderedIds: reorderDayItemIds(ids, dragId, targetId),
+                                profileId: profile.id,
+                              },
+                              onGroup,
+                              onError,
+                              onBusy,
+                              refresh: onRefresh,
+                            })
+                          }
+                          function rowDragHandlers(rowId: string) {
+                            return {
+                              draggable: canWrite,
+                              onDragStart: () => setDragRowId(rowId),
+                              onDragEnd: () => setDragRowId(null),
+                              onDragOver: (event: DragEvent) => {
+                                event.preventDefault()
+                              },
+                              onDrop: (event: DragEvent) => {
+                                event.preventDefault()
+                                if (dragRowId && dragRowId !== rowId) {
+                                  applyDayReorder(dragRowId, rowId)
+                                }
+                                setDragRowId(null)
+                              },
+                            }
+                          }
+                          return dayItems.map((item) => {
                           if (item.kind === "payment") {
                             const payment = item.payment
                             const canEditPayment =
@@ -1511,8 +1601,15 @@ export function TripDesk({
                             return (
                               <div
                                 key={payment.id}
+                                {...rowDragHandlers(payment.id)}
                                 className="flex min-h-9 items-center gap-2 px-3 py-1.5"
                               >
+                                {canWrite ? (
+                                  <GripVertical
+                                    className="size-3.5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                                    aria-hidden
+                                  />
+                                ) : null}
                                 <p className="min-w-0 flex-1 truncate text-sm font-medium">
                                   {memberName(group, payment.fromMemberId)} →{" "}
                                   {memberName(group, payment.toMemberId)}
@@ -1536,30 +1633,44 @@ export function TripDesk({
                                   </p>
                                 ) : null}
                                 {canEditPayment ? (
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    disabled={busy}
-                                    className="shrink-0"
-                                    onClick={() => {
-                                      applyGroupPatchOptimistic({
-                                        group,
-                                        profile,
-                                        body: {
-                                          action: "void-payment",
-                                          paymentId: payment.id,
-                                          profileId: profile.id,
-                                          restore: false,
-                                        },
-                                        onGroup,
-                                        onError,
-                                        onBusy,
-                                        refresh: onRefresh,
-                                      })
-                                    }}
-                                  >
-                                    Cross out
-                                  </Button>
+                                  <span className="flex shrink-0 gap-0.5">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      disabled={busy}
+                                      aria-label="Edit paid-back"
+                                      onClick={() => {
+                                        setEditingPayment(payment)
+                                        onPaymentOpen(true)
+                                      }}
+                                    >
+                                      <Pencil />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      disabled={busy}
+                                      aria-label="Delete paid-back"
+                                      onClick={() => {
+                                        applyGroupPatchOptimistic({
+                                          group,
+                                          profile,
+                                          body: {
+                                            action: "void-payment",
+                                            paymentId: payment.id,
+                                            profileId: profile.id,
+                                            restore: false,
+                                          },
+                                          onGroup,
+                                          onError,
+                                          onBusy,
+                                          refresh: onRefresh,
+                                        })
+                                      }}
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  </span>
                                 ) : null}
                               </div>
                             )
@@ -1569,12 +1680,6 @@ export function TripDesk({
                             profile &&
                             (expense.createdByProfileId === profile.id ||
                               group.createdByProfileId === profile.id)
-                          const viewerPaid =
-                            Boolean(viewerMemberId) &&
-                            expense.paidByMemberId === viewerMemberId
-                          const paidLabel = viewerPaid
-                            ? "You paid"
-                            : `${memberName(group, expense.paidByMemberId)} paid`
                           const second = expenseViewerSecondAmount(
                             expense,
                             viewerMemberId,
@@ -1583,16 +1688,23 @@ export function TripDesk({
                           return (
                             <div
                               key={expense.id}
+                              {...rowDragHandlers(expense.id)}
                               className="flex min-h-9 items-center gap-2 px-3 py-1.5"
                             >
-                              <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                                {expense.reason}
-                              </p>
+                              {canWrite ? (
+                                <GripVertical
+                                  className="size-3.5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{expense.reason}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {expenseRowMeta(group, expense, viewerMemberId)}
+                                </p>
+                              </div>
                               <p className="shrink-0 text-right text-sm tabular-nums">
                                 {formatMoney(expense.amount, group.currency)}
-                                <span className="ml-1 text-[10px] font-normal text-muted-foreground">
-                                  {paidLabel}
-                                </span>
                               </p>
                               {viewerMemberId ? (
                                 <p
@@ -1638,7 +1750,8 @@ export function TripDesk({
                                 ) : null}
                             </div>
                           )
-                        })}
+                        })
+                        })()}
                       </div>
                     ) : null}
                   </section>
@@ -1682,6 +1795,187 @@ export function TripDesk({
         </TabsContent>
         <TabsContent value="people" className={tripTabPanelClass}>
           <div className="space-y-2">
+          {isAdmin && profile ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Trip admin</CardTitle>
+                <CardDescription>
+                  Invite by email or phone, and approve join requests when join approval
+                  is on.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {knownContacts.length > 0 ? (
+                  <div className="space-y-1">
+                    <Label htmlFor="invite-contact">From contacts</Label>
+                    <select
+                      id="invite-contact"
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                      value={inviteContactId}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const id = event.target.value
+                        setInviteContactId(id)
+                        const picked = knownContacts.find((item) => item.id === id)
+                        if (picked) {
+                          setInviteEmail(picked.email ?? "")
+                          setInvitePhone(picked.phone ?? "")
+                        }
+                      }}
+                    >
+                      <option value="">Pick someone…</option>
+                      {knownContacts.map((contact) => (
+                        <option key={contact.contactId} value={contact.id}>
+                          {contact.name}
+                          {contact.username ? ` (@${contact.username})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input
+                    placeholder="Email or @username"
+                    value={inviteEmail}
+                    onChange={(event) => {
+                      setInviteEmail(event.target.value)
+                      setInviteContactId("")
+                    }}
+                  />
+                  <Input
+                    placeholder="Phone"
+                    value={invitePhone}
+                    onChange={(event) => {
+                      setInvitePhone(event.target.value)
+                      setInviteContactId("")
+                    }}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={busy || (!inviteEmail.trim() && !invitePhone.trim())}
+                  onClick={() => {
+                    applyGroupPatchOptimistic({
+                      group,
+                      profile,
+                      body: {
+                        action: "send-trip-invite",
+                        email: inviteEmail.trim() || null,
+                        phone: invitePhone.trim() || null,
+                        profileId: profile.id,
+                      },
+                      onGroup,
+                      onError,
+                      onBusy,
+                      refresh: onRefresh,
+                      onDone: () => {
+                        setInviteEmail("")
+                        setInvitePhone("")
+                        setInviteContactId("")
+                      },
+                    })
+                  }}
+                >
+                  Send invite
+                </Button>
+                {pendingTripInvites.length > 0 ? (
+                  <div className="space-y-1 text-sm">
+                    <p className="font-medium">Pending invites</p>
+                    {pendingTripInvites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center justify-between gap-2 rounded border px-2 py-1"
+                      >
+                        <span className="truncate text-muted-foreground">
+                          {invite.invitedEmail ?? invite.invitedPhone ?? "—"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          disabled={busy}
+                          onClick={() => {
+                            applyGroupPatchOptimistic({
+                              group,
+                              profile,
+                              body: {
+                                action: "revoke-trip-invite",
+                                inviteId: invite.id,
+                                profileId: profile.id,
+                              },
+                              onGroup,
+                              onError,
+                              onBusy,
+                              refresh: onRefresh,
+                            })
+                          }}
+                        >
+                          Revoke
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {pendingJoinRequests.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Join requests</p>
+                    {pendingJoinRequests.map((request) => (
+                      <div
+                        key={request.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-2 text-sm"
+                      >
+                        <span>{request.profileName ?? "Traveler"}</span>
+                        <span className="flex gap-1">
+                          <Button
+                            size="xs"
+                            disabled={busy}
+                            onClick={() => {
+                              applyGroupPatchOptimistic({
+                                group,
+                                profile,
+                                body: {
+                                  action: "approve-join-request",
+                                  requestId: request.id,
+                                  profileId: profile.id,
+                                },
+                                onGroup,
+                                onError,
+                                onBusy,
+                                refresh: onRefresh,
+                              })
+                            }}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => {
+                              applyGroupPatchOptimistic({
+                                group,
+                                profile,
+                                body: {
+                                  action: "reject-join-request",
+                                  requestId: request.id,
+                                  profileId: profile.id,
+                                },
+                                onGroup,
+                                onError,
+                                onBusy,
+                                refresh: onRefresh,
+                              })
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
           {group.members.map((member) => {
             const cover = member.coveredByMemberId
               ? group.members.find((item) => item.id === member.coveredByMemberId)
@@ -1801,7 +2095,7 @@ export function TripDesk({
           </div>
         </TabsContent>
       </Tabs>
-      </div>
+      </TripPageChrome>
 
       {profile ? (
         <TripEditDialog
@@ -1954,10 +2248,15 @@ export function TripDesk({
             group={group}
             profile={profile}
             busy={busy}
-            onOpen={onPaymentOpen}
+            editingPayment={editingPayment}
+            onOpen={(open) => {
+              onPaymentOpen(open)
+              if (!open) setEditingPayment(null)
+            }}
             onSaved={(next) => {
               onGroup(next)
               onPaymentOpen(false)
+              setEditingPayment(null)
             }}
             onRefresh={onRefresh}
             onError={onError}
@@ -2087,7 +2386,7 @@ function TripEditForm({
   )
 }
 
-function ExpenseDialog({
+export function ExpenseDialog({
   open,
   expense,
   defaultDate,
@@ -2403,11 +2702,12 @@ function MemberForm({
   )
 }
 
-function PaymentDialog({
+export function PaymentDialog({
   open,
   group,
   profile,
   busy,
+  editingPayment,
   onOpen,
   onSaved,
   onRefresh,
@@ -2418,6 +2718,7 @@ function PaymentDialog({
   group: Group
   profile: PublicProfile
   busy: boolean
+  editingPayment?: Payment | null
   onOpen: (open: boolean) => void
   onSaved: (group: Group) => void
   onRefresh: () => Promise<void>
@@ -2428,9 +2729,11 @@ function PaymentDialog({
     <Dialog open={open} onOpenChange={onOpen}>
       {open ? (
         <PaymentForm
+          key={editingPayment?.id ?? "new"}
           group={group}
           profile={profile}
           busy={busy}
+          editingPayment={editingPayment ?? null}
           onSaved={onSaved}
           onRefresh={onRefresh}
           onError={onError}
@@ -2445,6 +2748,7 @@ function PaymentForm({
   group,
   profile,
   busy,
+  editingPayment,
   onSaved,
   onRefresh,
   onError,
@@ -2453,27 +2757,34 @@ function PaymentForm({
   group: Group
   profile: PublicProfile
   busy: boolean
+  editingPayment: Payment | null
   onSaved: (group: Group) => void
   onRefresh: () => Promise<void>
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
 }) {
   const seat = mySeat(group, profile.id)
-  const [date, setDate] = useState(todayIsoDate())
-  const [amount, setAmount] = useState("")
-  const [fromId, setFromId] = useState(seat?.id ?? group.members[0]?.id ?? "")
+  const [date, setDate] = useState(editingPayment?.date ?? todayIsoDate())
+  const [amount, setAmount] = useState(
+    editingPayment ? String(editingPayment.amount) : ""
+  )
+  const [fromId, setFromId] = useState(
+    editingPayment?.fromMemberId ?? seat?.id ?? group.members[0]?.id ?? ""
+  )
   const [toId, setToId] = useState(
-    group.members.find((member) => member.id !== (seat?.id ?? group.members[0]?.id))
-      ?.id ?? ""
+    editingPayment?.toMemberId ??
+      group.members.find((member) => member.id !== (seat?.id ?? group.members[0]?.id))
+        ?.id ??
+      ""
   )
 
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Record paid back</DialogTitle>
+        <DialogTitle>{editingPayment ? "Edit paid back" : "Record paid back"}</DialogTitle>
         <DialogDescription>
-          Someone handed cash. This cuts the open tab. Cross it out later if
-          that was a mistake.
+          Someone handed cash. This cuts the open tab. Delete later if that was a
+          mistake.
         </DialogDescription>
       </DialogHeader>
       <div className="grid gap-3">
@@ -2536,6 +2847,40 @@ function PaymentForm({
               onError("Amount has to be a real number.")
               return
             }
+            if (editingPayment) {
+              applyGroupPatchOptimistic({
+                group,
+                profile,
+                body: {
+                  action: "void-payment",
+                  paymentId: editingPayment.id,
+                  profileId: profile.id,
+                  restore: false,
+                },
+                onGroup: (afterVoid) => {
+                  applyGroupPatchOptimistic({
+                    group: afterVoid,
+                    profile,
+                    body: {
+                      action: "add-payment",
+                      date,
+                      amount: parsed,
+                      fromMemberId: fromId,
+                      toMemberId: toId,
+                      profileId: profile.id,
+                    },
+                    onGroup: onSaved,
+                    onError,
+                    onBusy,
+                    refresh: onRefresh,
+                  })
+                },
+                onError,
+                onBusy,
+                refresh: onRefresh,
+              })
+              return
+            }
             applyGroupPatchOptimistic({
               group,
               profile,
@@ -2554,7 +2899,7 @@ function PaymentForm({
             })
           }}
         >
-          Save payment
+          {editingPayment ? "Save changes" : "Save payment"}
         </Button>
       </DialogFooter>
     </DialogContent>

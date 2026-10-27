@@ -13,6 +13,7 @@ import {
   groupPaidBackSentByMember,
   paidBackReceivedForMember,
   ledgerDaysForViewer,
+  expenseRowMeta,
   ledgerDayItems,
   expenseViewerSecondAmount,
   paymentViewerTone,
@@ -460,6 +461,61 @@ test("ledgerDayItems interleaves expenses and payments oldest first", () => {
     ],
   })
   const items = ledgerDayItems(ledgerDaysForViewer(g, "m1")[0]!)
+  assert.equal(items[0]!.kind, "payment")
+  assert.equal(items[1]!.kind, "expense")
+})
+
+test("expenseRowMeta lists payer and participants", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "Rahul", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "Seemon", profileId: null, coveredByMemberId: null },
+      { id: "m3", name: "Priya", profileId: null, coveredByMemberId: null },
+    ],
+    expenses: [
+      expense({
+        id: "e1",
+        paidByMemberId: "m2",
+        participantIds: ["m1", "m2", "m3"],
+      }),
+    ],
+  })
+  assert.match(expenseRowMeta(g, g.expenses[0]!, "m1"), /Paid by Seemon/)
+  assert.match(expenseRowMeta(g, g.expenses[0]!, "m1"), /With: you, Seemon, Priya/)
+})
+
+test("ledgerDayItems respects ledgerDayOrder", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
+    ],
+    expenses: [
+      expense({
+        id: "e1",
+        participantIds: ["m1", "m2"],
+        paidByMemberId: "m1",
+        date: "2026-01-02",
+        createdAt: "2026-01-02T12:00:00.000Z",
+      }),
+    ],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 20,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T15:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
+    ],
+    ledgerDayOrder: { "2026-01-02": ["pay1", "e1"] },
+  })
+  const day = ledgerDaysForViewer(g, "m1")[0]!
+  const items = ledgerDayItems(day, g.ledgerDayOrder)
   assert.equal(items[0]!.kind, "payment")
   assert.equal(items[1]!.kind, "expense")
 })

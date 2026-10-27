@@ -1,6 +1,6 @@
 # Trip Expenses Balancer
 
-Group trip expenses. One person opens a trip and names the people. Everyone **signs up**, uses the invite link, and claims their name. Spends store date, amount, reason, payer, and who was on the bill.
+Group trip expenses. One person opens a trip and names the people. Everyone **signs up**, enters the trip **join code**, and claims their roster nickname. Spends store date, amount, reason, payer, and who was on the bill.
 
 **Production** stores all trip data in **Supabase Postgres** (`POSTGRES_URL`). **Never commit real ledger JSON** to git — use local `data/store.json` only for offline dev. Older repo commits may have contained a snapshot; live data stays in Postgres only.
 
@@ -42,7 +42,7 @@ Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/s
 ## How a trip works
 
 1. **Sign up** with username + password; complete profile (display name, email, phone).
-2. **Open a trip** or **join** via invite link (`?join=` code on the trip URL).
+2. **Open a trip** or **join with the join code** (six letters on the trip header). Shared links with `?join=` still work as a shortcut to that code.
 3. **Claim** the nickname that is you on the roster.
 4. Add spends; **Settle** shows who pays whom. Mark **paid** when cash changes hands.
 

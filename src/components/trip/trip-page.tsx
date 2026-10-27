@@ -20,8 +20,18 @@ export function TripPage() {
   const groupId = Array.isArray(rawId) ? rawId[0] ?? "" : String(rawId ?? "")
   const tripPath = groupId ? `/trip/${groupId}` : "/"
 
-  const { health, profile, group, setGroup, loadError, loading, fromCache, refreshGroup } =
-    useTripLoad(groupId, tripPath)
+  const {
+    health,
+    profile,
+    group,
+    setGroup,
+    loadError,
+    loading,
+    fromCache,
+    pendingJoinRequests,
+    pendingTripInvites,
+    refreshGroup,
+  } = useTripLoad(groupId, tripPath)
 
   const [deskError, setDeskError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -117,6 +127,8 @@ export function TripPage() {
           onBusy={setBusy}
           onClaim={profile ? onClaim : undefined}
           fromCache={fromCache}
+          pendingJoinRequests={pendingJoinRequests}
+          pendingTripInvites={pendingTripInvites}
         />
       </div>
     </Shell>
