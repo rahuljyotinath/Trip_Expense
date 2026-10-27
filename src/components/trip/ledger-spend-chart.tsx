@@ -44,6 +44,10 @@ export function LedgerSpendChart({
     () => Math.max(0, ...memberFlow.map((row) => row.received)),
     [memberFlow]
   )
+  const flowScaleMax = useMemo(
+    () => Math.max(maxPaid, maxReceived, 0),
+    [maxPaid, maxReceived]
+  )
   const maxDay = useMemo(
     () => Math.max(0, ...ledgerByDay.map((day) => day.total)),
     [ledgerByDay]
@@ -61,7 +65,8 @@ export function LedgerSpendChart({
             Who paid &amp; received (group)
           </p>
           <p className="text-[11px] text-muted-foreground">
-            Paid includes group bills you fronted plus paid-back you sent.
+            Paid includes group bills you fronted plus paid-back you sent. Bar length
+            uses the same scale for Paid and Received.
           </p>
           <ul className="space-y-3">
             {memberFlow.map((row) => (
@@ -76,8 +81,8 @@ export function LedgerSpendChart({
                           className="h-full rounded-full bg-primary/70"
                           style={{
                             width:
-                              maxPaid > 0 && row.paid > 0
-                                ? `${(row.paid / maxPaid) * 100}%`
+                              flowScaleMax > 0 && row.paid > 0
+                                ? `${(row.paid / flowScaleMax) * 100}%`
                                 : "0%",
                           }}
                         />
@@ -90,8 +95,8 @@ export function LedgerSpendChart({
                           className="h-full rounded-full bg-moss/70"
                           style={{
                             width:
-                              maxReceived > 0 && row.received > 0
-                                ? `${(row.received / maxReceived) * 100}%`
+                              flowScaleMax > 0 && row.received > 0
+                                ? `${(row.received / flowScaleMax) * 100}%`
                                 : "0%",
                           }}
                         />
