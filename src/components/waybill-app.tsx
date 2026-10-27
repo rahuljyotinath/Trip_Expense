@@ -44,6 +44,9 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LedgerSpendChart } from "@/components/trip/ledger-spend-chart"
+import { TripTravelAffiliate } from "@/components/trip/trip-travel-affiliate"
+import { UpiSettleButton } from "@/components/trip/upi-settle-button"
+import { whatsappInviteMessage, whatsappShareUrl } from "@/lib/whatsapp-invite"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
@@ -496,6 +499,10 @@ export function Shell({
               <h1 className="font-heading text-4xl tracking-tight sm:text-5xl sm:text-[2.75rem]">
                 Trip Expenses Balancer
               </h1>
+              <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+                Free trip khata for India — WhatsApp pe link bhejo, bill split karo, UPI se settle.
+                Friends ke liye hamesha free.
+              </p>
             </>
           )}
         </button>
@@ -562,6 +569,9 @@ function Home({
         <p className="mt-1 max-w-xl text-muted-foreground">
           Opening a trip writes the roster. Joining means you claim one of those
           names. Nobody floats unattached.
+        </p>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground/90">
+          Goa, wedding, family yatra — trip khatam, hisaab clear. UPI settle; no app fee.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -1118,6 +1128,16 @@ export function TripDesk({
             {copied ? <Check /> : <Link2 />}
             {copied ? "Link copied" : "Copy invite link"}
           </Button>
+          {shareUrl ? (
+            <a
+              href={whatsappShareUrl(whatsappInviteMessage(group.name, shareUrl))}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium shadow-sm hover:bg-muted"
+            >
+              WhatsApp invite
+            </a>
+          ) : null}
           {profile && isOpener ? (
             <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
               <Download /> Export CSV
@@ -1173,6 +1193,8 @@ export function TripDesk({
 
       <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
 
+      <TripTravelAffiliate group={group} />
+
       <Tabs defaultValue="ledger" className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <TabsList className="shrink-0">
           <TabsTrigger value="settle">Settle</TabsTrigger>
@@ -1215,32 +1237,43 @@ export function TripDesk({
                     <p className="font-heading text-2xl">
                       {formatMoney(transfer.amount, group.currency)}
                     </p>
-                    {canWrite && profile ? (
-                      <Button
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => {
-                          applyGroupPatchOptimistic({
-                            group,
-                            profile,
-                            body: {
-                              action: "add-payment",
-                              date: todayIsoDate(),
-                              amount: transfer.amount,
-                              fromMemberId: transfer.fromMemberId,
-                              toMemberId: transfer.toMemberId,
-                              profileId: profile.id,
-                            },
-                            onGroup,
-                            onError,
-                            onBusy,
-                            refresh: onRefresh,
-                          })
-                        }}
-                      >
-                        Mark paid
-                      </Button>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {seat?.id === transfer.fromMemberId ? (
+                        <UpiSettleButton
+                          payeeMemberId={transfer.toMemberId}
+                          payeeName={memberName(group, transfer.toMemberId)}
+                          amount={transfer.amount}
+                          currency={group.currency}
+                          note={`${group.name} settle`}
+                        />
+                      ) : null}
+                      {canWrite && profile ? (
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => {
+                            applyGroupPatchOptimistic({
+                              group,
+                              profile,
+                              body: {
+                                action: "add-payment",
+                                date: todayIsoDate(),
+                                amount: transfer.amount,
+                                fromMemberId: transfer.fromMemberId,
+                                toMemberId: transfer.toMemberId,
+                                profileId: profile.id,
+                              },
+                              onGroup,
+                              onError,
+                              onBusy,
+                              refresh: onRefresh,
+                            })
+                          }}
+                        >
+                          Mark paid
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1428,31 +1461,43 @@ export function TripDesk({
                                   {memberName(group, payment.toMemberId)}
                                 </p>
                               </CardContent>
-                              {canEditPayment ? (
-                                <CardFooter className="mt-auto gap-0.5 border-0 bg-transparent px-3 pb-3 pt-0">
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    disabled={busy}
-                                    onClick={() => {
-                                      applyGroupPatchOptimistic({
-                                        group,
-                                        profile,
-                                        body: {
-                                          action: "void-payment",
-                                          paymentId: payment.id,
-                                          profileId: profile.id,
-                                          restore: false,
-                                        },
-                                        onGroup,
-                                        onError,
-                                        onBusy,
-                                        refresh: onRefresh,
-                                      })
-                                    }}
-                                  >
-                                    Cross out
-                                  </Button>
+                              {seat?.id === payment.fromMemberId || canEditPayment ? (
+                                <CardFooter className="mt-auto flex-wrap gap-1 border-0 bg-transparent px-3 pb-3 pt-0">
+                                  {seat?.id === payment.fromMemberId ? (
+                                    <UpiSettleButton
+                                      payeeMemberId={payment.toMemberId}
+                                      payeeName={memberName(group, payment.toMemberId)}
+                                      amount={payment.amount}
+                                      currency={group.currency}
+                                      note={`${group.name} paid back`}
+                                      size="xs"
+                                    />
+                                  ) : null}
+                                  {canEditPayment ? (
+                                    <Button
+                                      variant="ghost"
+                                      size="xs"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        applyGroupPatchOptimistic({
+                                          group,
+                                          profile,
+                                          body: {
+                                            action: "void-payment",
+                                            paymentId: payment.id,
+                                            profileId: profile.id,
+                                            restore: false,
+                                          },
+                                          onGroup,
+                                          onError,
+                                          onBusy,
+                                          refresh: onRefresh,
+                                        })
+                                      }}
+                                    >
+                                      Cross out
+                                    </Button>
+                                  ) : null}
                                 </CardFooter>
                               ) : null}
                             </Card>

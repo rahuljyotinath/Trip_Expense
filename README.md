@@ -49,3 +49,7 @@ Vercel’s `ignoreCommand` in [`vercel.json`](vercel.json) skips redeploys when 
 6. Edit or delete a spend you logged (or the trip opener can).
 
 One currency per trip (INR by default). Roster names are nicknames — two Rahuls need two different labels.
+
+## India GTM (internal)
+
+Product and monetization notes (users stay free): [`docs/gtm/`](docs/gtm/).
