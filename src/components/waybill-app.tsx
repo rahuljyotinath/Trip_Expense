@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Banknote,
   Check,
+  ChevronDown,
   Compass,
   Download,
   Link2,
@@ -42,6 +43,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { LedgerSpendChart } from "@/components/trip/ledger-spend-chart"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
@@ -59,9 +61,9 @@ import {
 } from "@/lib/client-api"
 import {
   expensesByDay,
+  ledgerDaysForViewer,
   ledgerGroupExpenses,
-  ledgerPersonalExpenses,
-  ledgerPersonalPayments,
+  ledgerPersonalExpensesForViewer,
   personalExpenditureForMember,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
@@ -997,17 +999,41 @@ export function TripDesk({
   const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
   const groupLedgerExpenses = useMemo(() => ledgerGroupExpenses(group), [group])
-  const personalLedgerExpenses = useMemo(() => ledgerPersonalExpenses(group), [group])
-  const personalLedgerPayments = useMemo(() => ledgerPersonalPayments(group), [group])
+  const personalLedgerExpenses = useMemo(
+    () => ledgerPersonalExpensesForViewer(group, seat?.id ?? null),
+    [group, seat?.id]
+  )
   const ledgerByDay = useMemo(
     () => expensesByDay(groupLedgerExpenses),
     [groupLedgerExpenses]
+  )
+  const ledgerDays = useMemo(
+    () => ledgerDaysForViewer(group, seat?.id ?? null),
+    [group, seat?.id]
   )
   const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [draftExpenseDate, setDraftExpenseDate] = useState<string | null>(null)
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set())
+
+  function toggleDayCollapsed(date: string) {
+    setCollapsedDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(date)) next.delete(date)
+      else next.add(date)
+      return next
+    })
+  }
+
+  function collapseAllLedgerDays() {
+    setCollapsedDays(new Set(ledgerDays.map((day) => day.date)))
+  }
+
+  function expandAllLedgerDays() {
+    setCollapsedDays(new Set())
+  }
 
   function openNewExpense(forDate?: string) {
     setEditingExpense(null)
@@ -1297,107 +1323,208 @@ export function TripDesk({
           value="ledger"
           className="space-y-4 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-3 lg:pt-2"
         >
-          {groupLedgerExpenses.length === 0 ? (
+          {groupLedgerExpenses.length > 0 ? (
+            <LedgerSpendChart
+              group={group}
+              ledgerByDay={ledgerByDay}
+              memberLabel={(id) => memberName(group, id)}
+            />
+          ) : null}
+          {ledgerDays.length === 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle>No group spends yet</CardTitle>
                 <CardDescription>
-                  Shared bills appear here by day (oldest first). Personal spends and paid-back
-                  transfers are listed below.
+                  Shared bills and your paid-back transfers appear here by day (oldest first).
                 </CardDescription>
               </CardHeader>
             </Card>
           ) : (
-            ledgerByDay.map((day) => (
-              <section key={day.date} className="space-y-3">
-                <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b bg-background/95 py-1.5 backdrop-blur-sm">
-                  <h3 className="font-heading text-base">{formatDay(day.date)}</h3>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canWrite ? (
-                      <Button
+            <>
+              {ledgerDays.length >= 2 ? (
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={collapseAllLedgerDays}
+                  >
+                    Collapse all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={expandAllLedgerDays}
+                  >
+                    Expand all
+                  </Button>
+                </div>
+              ) : null}
+              {ledgerDays.map((day) => {
+                const collapsed = collapsedDays.has(day.date)
+                return (
+                  <section
+                    key={day.date}
+                    id={`ledger-day-${day.date}`}
+                    className="scroll-mt-14 space-y-3"
+                  >
+                    <div className="sticky top-0 z-10 grid grid-cols-1 items-center gap-x-4 gap-y-2 border-b bg-background/95 py-2 backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <button
                         type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => openNewExpense(day.date)}
+                        className="flex min-w-0 items-center gap-2 text-left"
+                        aria-expanded={!collapsed}
+                        onClick={() => toggleDayCollapsed(day.date)}
                       >
-                        <Receipt className="size-3.5" />
-                        Add expense for {formatDayDots(day.date)}
-                      </Button>
+                        <ChevronDown
+                          className={`size-4 shrink-0 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`}
+                        />
+                        <h3 className="font-heading text-base">{formatDay(day.date)}</h3>
+                      </button>
+                      {canWrite ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          className="w-full sm:w-auto"
+                          onClick={() => openNewExpense(day.date)}
+                        >
+                          <Receipt className="size-3.5" />
+                          <span className="sm:hidden">Add</span>
+                          <span className="hidden sm:inline">
+                            Add expense for {formatDayDots(day.date)}
+                          </span>
+                        </Button>
+                      ) : (
+                        <span className="hidden sm:block" />
+                      )}
+                      <p className="font-heading text-base tabular-nums sm:min-w-[5.5rem] sm:text-right">
+                        {formatMoney(day.groupSpendTotal, group.currency)}
+                      </p>
+                    </div>
+                    {!collapsed ? (
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {day.payments.map((payment) => {
+                          const canEditPayment =
+                            profile &&
+                            (payment.createdByProfileId === profile.id ||
+                              group.createdByProfileId === profile.id)
+                          return (
+                            <Card
+                              key={payment.id}
+                              size="sm"
+                              className="flex flex-col pb-3 motion-safe:active:scale-[0.99] has-data-[slot=card-footer]:pb-0"
+                            >
+                              <CardContent className="flex flex-1 flex-col gap-2 py-3">
+                                <p className="font-heading text-lg leading-none tabular-nums">
+                                  {formatMoney(payment.amount, group.currency)}
+                                </p>
+                                <Badge variant="secondary" className="w-fit text-xs">
+                                  Paid back
+                                </Badge>
+                                <p className="font-medium leading-snug">
+                                  {memberName(group, payment.fromMemberId)} →{" "}
+                                  {memberName(group, payment.toMemberId)}
+                                </p>
+                              </CardContent>
+                              {canEditPayment ? (
+                                <CardFooter className="mt-auto gap-0.5 border-0 bg-transparent px-3 pb-3 pt-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      applyGroupPatchOptimistic({
+                                        group,
+                                        profile,
+                                        body: {
+                                          action: "void-payment",
+                                          paymentId: payment.id,
+                                          profileId: profile.id,
+                                          restore: false,
+                                        },
+                                        onGroup,
+                                        onError,
+                                        onBusy,
+                                        refresh: onRefresh,
+                                      })
+                                    }}
+                                  >
+                                    Cross out
+                                  </Button>
+                                </CardFooter>
+                              ) : null}
+                            </Card>
+                          )
+                        })}
+                        {day.expenses.map((expense) => {
+                          const canEdit =
+                            profile &&
+                            (expense.createdByProfileId === profile.id ||
+                              group.createdByProfileId === profile.id)
+                          const splitLabel = expense.participantIds
+                            .map((id) => memberName(group, id))
+                            .join(", ")
+                          return (
+                            <Card
+                              key={expense.id}
+                              size="sm"
+                              className="flex flex-col pb-3 motion-safe:active:scale-[0.99] has-data-[slot=card-footer]:pb-0"
+                            >
+                              <CardContent className="flex flex-1 flex-col gap-2 py-3">
+                                <p className="font-heading text-lg leading-none tabular-nums">
+                                  {formatMoney(expense.amount, group.currency)}
+                                </p>
+                                <Badge variant="secondary" className="w-fit text-xs">
+                                  Paid by {memberName(group, expense.paidByMemberId)}
+                                </Badge>
+                                <p className="font-medium leading-snug">{expense.reason}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Split: {splitLabel}
+                                </p>
+                              </CardContent>
+                              {canEdit ? (
+                                <CardFooter className="mt-auto gap-0.5 border-0 bg-transparent px-3 pb-3 pt-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    disabled={busy}
+                                    aria-label="Edit spend"
+                                    onClick={() => {
+                                      setEditingExpense(expense)
+                                      onExpenseOpen(true)
+                                    }}
+                                  >
+                                    <Pencil />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    disabled={busy}
+                                    aria-label="Delete spend"
+                                    onClick={() => setDeleteExpenseTarget(expense)}
+                                  >
+                                    <Trash2 />
+                                  </Button>
+                                </CardFooter>
+                              ) : null}
+                            </Card>
+                          )
+                        })}
+                      </div>
                     ) : null}
-                    <p className="font-heading text-base tabular-nums">
-                      {formatMoney(day.total, group.currency)}
-                    </p>
-                  </div>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {day.expenses.map((expense) => {
-                    const canEdit =
-                      profile &&
-                      (expense.createdByProfileId === profile.id ||
-                        group.createdByProfileId === profile.id)
-                    const splitLabel = expense.participantIds
-                      .map((id) => memberName(group, id))
-                      .join(", ")
-                    return (
-                      <Card
-                        key={expense.id}
-                        size="sm"
-                        className="flex flex-col motion-safe:active:scale-[0.99]"
-                      >
-                        <CardContent className="flex flex-1 flex-col gap-1.5 pt-1">
-                          <p className="font-heading text-xl leading-none tabular-nums lg:text-2xl">
-                            {formatMoney(expense.amount, group.currency)}
-                          </p>
-                          <Badge variant="secondary" className="w-fit text-sm">
-                            Paid by {memberName(group, expense.paidByMemberId)}
-                          </Badge>
-                          <p className="truncate font-medium leading-snug">
-                            {expense.reason}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Split: {splitLabel}
-                          </p>
-                        </CardContent>
-                        {canEdit ? (
-                          <CardFooter className="mt-auto gap-1 border-0 bg-transparent py-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              aria-label="Edit spend"
-                              onClick={() => {
-                                setEditingExpense(expense)
-                                onExpenseOpen(true)
-                              }}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={busy}
-                              aria-label="Delete spend"
-                              onClick={() => setDeleteExpenseTarget(expense)}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </CardFooter>
-                        ) : null}
-                      </Card>
-                    )
-                  })}
-                </div>
-              </section>
-            ))
+                  </section>
+                )
+              })}
+            </>
           )}
-          {personalLedgerExpenses.length > 0 || personalLedgerPayments.length > 0 ? (
+          {personalLedgerExpenses.length > 0 ? (
             <section className="space-y-2 border-t pt-4">
               <div>
-                <h3 className="font-heading text-base">Personal &amp; paid back</h3>
+                <h3 className="font-heading text-base">Your personal spends</h3>
                 <p className="text-sm text-muted-foreground">
-                  Not mixed into group splits. Personal rows count toward your personal spend total
-                  only.
+                  Solo spends only you see — not mixed into group splits.
                 </p>
               </div>
               <div className="overflow-x-auto rounded-lg border">
@@ -1405,7 +1532,6 @@ export function TripDesk({
                   <thead>
                     <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                       <th className="px-3 py-2 font-medium">Date</th>
-                      <th className="px-3 py-2 font-medium">Type</th>
                       <th className="px-3 py-2 font-medium">Detail</th>
                       <th className="px-3 py-2 text-right font-medium">Amount</th>
                     </tr>
@@ -1414,26 +1540,9 @@ export function TripDesk({
                     {personalLedgerExpenses.map((expense) => (
                       <tr key={expense.id} className="border-b last:border-0">
                         <td className="px-3 py-2 whitespace-nowrap">{formatDay(expense.date)}</td>
-                        <td className="px-3 py-2">Personal</td>
-                        <td className="px-3 py-2">
-                          {expense.reason} · paid by{" "}
-                          {memberName(group, expense.paidByMemberId)}
-                        </td>
+                        <td className="px-3 py-2">{expense.reason}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatMoney(expense.amount, group.currency)}
-                        </td>
-                      </tr>
-                    ))}
-                    {personalLedgerPayments.map((payment) => (
-                      <tr key={payment.id} className="border-b last:border-0">
-                        <td className="px-3 py-2 whitespace-nowrap">{formatDay(payment.date)}</td>
-                        <td className="px-3 py-2">Paid back</td>
-                        <td className="px-3 py-2">
-                          {memberName(group, payment.fromMemberId)} →{" "}
-                          {memberName(group, payment.toMemberId)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {formatMoney(payment.amount, group.currency)}
                         </td>
                       </tr>
                     ))}
