@@ -57,7 +57,13 @@ import {
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
-import { ledgerExpensesForDisplay } from "@/lib/ledger-display"
+import {
+  expensesByDay,
+  ledgerGroupExpenses,
+  ledgerPersonalExpenses,
+  ledgerPersonalPayments,
+  personalExpenditureForMember,
+} from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
@@ -870,6 +876,10 @@ function TripSummaryStrip({
   seatId: string | null
 }) {
   const stats = useMemo(() => tripStats(group), [group])
+  const personalSpendTotal = useMemo(
+    () => (seatId ? personalExpenditureForMember(group, seatId) : 0),
+    [group, seatId]
+  )
   const mine = seatId ? stats.byMember[seatId] : null
   const net = mine?.net ?? 0
   const balance =
@@ -910,13 +920,21 @@ function TripSummaryStrip({
             </div>
             <div>
               <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
-                You paid
+                You paid (group)
               </p>
               <p className="font-heading text-lg lg:text-xl">
                 {formatMoney(mine.paid, group.currency)}
               </p>
             </div>
             <div>
+              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
+                Personal spend
+              </p>
+              <p className="font-heading text-lg lg:text-xl">
+                {formatMoney(personalSpendTotal, group.currency)}
+              </p>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
               <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
                 {balance.label}
               </p>
@@ -978,22 +996,13 @@ export function TripDesk({
   const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
   const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
-  const ledgerExpenses = useMemo(
-    () => ledgerExpensesForDisplay(group, seat?.id ?? null),
-    [group, seat?.id]
+  const groupLedgerExpenses = useMemo(() => ledgerGroupExpenses(group), [group])
+  const personalLedgerExpenses = useMemo(() => ledgerPersonalExpenses(group), [group])
+  const personalLedgerPayments = useMemo(() => ledgerPersonalPayments(group), [group])
+  const ledgerByDay = useMemo(
+    () => expensesByDay(groupLedgerExpenses),
+    [groupLedgerExpenses]
   )
-  const ledgerByDay = useMemo(() => {
-    const days: { date: string; expenses: Expense[] }[] = []
-    for (const expense of ledgerExpenses) {
-      const last = days[days.length - 1]
-      if (last?.date === expense.date) last.expenses.push(expense)
-      else days.push({ date: expense.date, expenses: [expense] })
-    }
-    return days.map((day) => ({
-      ...day,
-      total: day.expenses.reduce((sum, item) => sum + item.amount, 0),
-    }))
-  }, [ledgerExpenses])
   const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -1288,14 +1297,13 @@ export function TripDesk({
           value="ledger"
           className="space-y-4 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-3 lg:pt-2"
         >
-          {ledgerExpenses.length === 0 ? (
+          {groupLedgerExpenses.length === 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>No shared spends to show</CardTitle>
+                <CardTitle>No group spends yet</CardTitle>
                 <CardDescription>
-                  {seat
-                    ? "Only bills you're on with claimed members appear here (oldest first)."
-                    : "Sign in and claim a seat to see your shared ledger."}
+                  Shared bills appear here by day (oldest first). Personal spends and paid-back
+                  transfers are listed below.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -1383,6 +1391,57 @@ export function TripDesk({
               </section>
             ))
           )}
+          {personalLedgerExpenses.length > 0 || personalLedgerPayments.length > 0 ? (
+            <section className="space-y-2 border-t pt-4">
+              <div>
+                <h3 className="font-heading text-base">Personal &amp; paid back</h3>
+                <p className="text-sm text-muted-foreground">
+                  Not mixed into group splits. Personal rows count toward your personal spend total
+                  only.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full min-w-[28rem] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">Date</th>
+                      <th className="px-3 py-2 font-medium">Type</th>
+                      <th className="px-3 py-2 font-medium">Detail</th>
+                      <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {personalLedgerExpenses.map((expense) => (
+                      <tr key={expense.id} className="border-b last:border-0">
+                        <td className="px-3 py-2 whitespace-nowrap">{formatDay(expense.date)}</td>
+                        <td className="px-3 py-2">Personal</td>
+                        <td className="px-3 py-2">
+                          {expense.reason} · paid by{" "}
+                          {memberName(group, expense.paidByMemberId)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatMoney(expense.amount, group.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                    {personalLedgerPayments.map((payment) => (
+                      <tr key={payment.id} className="border-b last:border-0">
+                        <td className="px-3 py-2 whitespace-nowrap">{formatDay(payment.date)}</td>
+                        <td className="px-3 py-2">Paid back</td>
+                        <td className="px-3 py-2">
+                          {memberName(group, payment.fromMemberId)} →{" "}
+                          {memberName(group, payment.toMemberId)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatMoney(payment.amount, group.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </TabsContent>
         <TabsContent
           value="people"

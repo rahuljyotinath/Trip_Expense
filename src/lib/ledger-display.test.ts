@@ -3,7 +3,10 @@ import test from "node:test"
 import {
   compareLedgerExpenses,
   isSoloSelfExpense,
-  ledgerExpensesForDisplay,
+  ledgerGroupExpenses,
+  ledgerPersonalExpenses,
+  ledgerPersonalPayments,
+  personalExpenditureForMember,
 } from "./ledger-display"
 import type { Expense, Group } from "./types"
 
@@ -45,55 +48,50 @@ test("compareLedgerExpenses sorts oldest first", () => {
   assert.equal(compareLedgerExpenses(a, b) < 0, true)
 })
 
-test("ledger hides solo self-pay", () => {
-  const g = group({
-    members: [
-      { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
-      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
-    ],
-    expenses: [
-      expense({ id: "solo", participantIds: ["m1"], paidByMemberId: "m1" }),
-      expense({ id: "shared", participantIds: ["m1", "m2"], paidByMemberId: "m1" }),
-    ],
-  })
-  const visible = ledgerExpensesForDisplay(g, "m1")
-  assert.equal(visible.length, 1)
-  assert.equal(visible[0]!.id, "shared")
-})
-
-test("ledger hides expenses with unclaimed members", () => {
+test("ledger group vs personal split", () => {
   const g = group({
     members: [
       { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
       { id: "m2", name: "B", profileId: null, coveredByMemberId: null },
     ],
     expenses: [
-      expense({ id: "open", participantIds: ["m1", "m2"], paidByMemberId: "m1" }),
-      expense({ id: "closed", participantIds: ["m1"], paidByMemberId: "m1", amount: 50 }),
+      expense({ id: "solo", participantIds: ["m1"], paidByMemberId: "m1", amount: 50 }),
+      expense({ id: "shared", participantIds: ["m1", "m2"], paidByMemberId: "m1" }),
     ],
   })
-  const visible = ledgerExpensesForDisplay(g, "m1")
-  assert.equal(visible.length, 0)
+  assert.equal(ledgerGroupExpenses(g).map((e) => e.id).join(","), "shared")
+  assert.equal(ledgerPersonalExpenses(g).map((e) => e.id).join(","), "solo")
+  assert.equal(personalExpenditureForMember(g, "m1"), 50)
 })
 
-test("ledger hides other people's bills when viewer has a seat", () => {
+test("ledger shows expenses with unclaimed members in group table", () => {
   const g = group({
     members: [
       { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
-      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
-      { id: "m3", name: "C", profileId: "p3", coveredByMemberId: null },
+      { id: "m2", name: "B", profileId: null, coveredByMemberId: null },
     ],
-    expenses: [
-      expense({ id: "mine", participantIds: ["m1", "m2"], paidByMemberId: "m2" }),
-      expense({
-        id: "theirs",
-        participantIds: ["m2", "m3"],
-        paidByMemberId: "m2",
-        amount: 40,
-      }),
+    expenses: [expense({ id: "open", participantIds: ["m1", "m2"], paidByMemberId: "m1" })],
+  })
+  assert.equal(ledgerGroupExpenses(g).length, 1)
+})
+
+test("ledgerPersonalPayments skips voided", () => {
+  const g = group({
+    members: [{ id: "m1", name: "A", profileId: "p1", coveredByMemberId: null }],
+    expenses: [],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 20,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T12:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
     ],
   })
-  const visible = ledgerExpensesForDisplay(g, "m1")
-  assert.equal(visible.length, 1)
-  assert.equal(visible[0]!.id, "mine")
+  assert.equal(ledgerPersonalPayments(g).length, 1)
 })
