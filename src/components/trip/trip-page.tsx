@@ -2,20 +2,11 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Shell, TripDesk } from "@/components/waybill-app"
+import { useTripLoad } from "@/components/trip/use-trip-load"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { profileNeedsSetup } from "@/lib/auth-ops"
-import {
-  claimSeat,
-  fetchGroup,
-  fetchSessionProfile,
-  loadHealth,
-  logoutUser,
-  syncProfileToLocalStore,
-  type Health,
-} from "@/lib/client-api"
-import type { Group, PublicProfile } from "@/lib/types"
+import { claimSeat, logoutUser } from "@/lib/client-api"
 import { AlertCircle } from "lucide-react"
 
 function errorText(error: unknown) {
@@ -29,59 +20,15 @@ export function TripPage() {
   const groupId = Array.isArray(rawId) ? rawId[0] ?? "" : String(rawId ?? "")
   const tripPath = groupId ? `/trip/${groupId}` : "/"
 
-  const [health, setHealth] = useState<Health | null>(null)
-  const [profile, setProfile] = useState<PublicProfile | null>(null)
-  const [group, setGroup] = useState<Group | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const { health, profile, group, setGroup, loadError, loading, refreshGroup } =
+    useTripLoad(groupId, tripPath)
+
   const [deskError, setDeskError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (!groupId) return
-
-    let cancelled = false
-
-    ;(async () => {
-      setLoading(true)
-      setLoadError(null)
-      setDeskError(null)
-      setGroup(null)
-      try {
-        const [nextHealth, session, nextGroup] = await Promise.all([
-          loadHealth(),
-          fetchSessionProfile(),
-          fetchGroup(groupId, { skipHealth: true }),
-        ])
-        if (cancelled) return
-        setHealth(nextHealth)
-        if (session?.id && session.username) {
-          if (profileNeedsSetup(session)) {
-            router.replace(
-              `/profile/setup?next=${encodeURIComponent(tripPath)}`
-            )
-            return
-          }
-          setProfile(session)
-          syncProfileToLocalStore(session)
-        } else {
-          setProfile(null)
-        }
-        setGroup(nextGroup)
-      } catch (err) {
-        if (!cancelled) setLoadError(errorText(err))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [groupId, router, tripPath])
 
   async function copyInvite(value: string) {
     await navigator.clipboard.writeText(value)
@@ -105,7 +52,6 @@ export function TripPage() {
 
   async function onLogout() {
     await logoutUser()
-    setProfile(null)
     router.replace("/login")
   }
 
@@ -143,7 +89,7 @@ export function TripPage() {
       onLogout={profile ? () => void onLogout() : undefined}
     >
       {deskError ? (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive" className="mb-4 shrink-0">
           <AlertCircle />
           <AlertTitle>Hold on</AlertTitle>
           <AlertDescription>{deskError}</AlertDescription>
@@ -163,8 +109,7 @@ export function TripPage() {
         onPaymentOpen={setPaymentOpen}
         onCopy={copyInvite}
         onRefresh={async () => {
-          const next = await fetchGroup(group.id)
-          setGroup(next)
+          await refreshGroup()
         }}
         onGroup={setGroup}
         onError={setDeskError}

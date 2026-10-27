@@ -43,7 +43,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LedgerSpendChart } from "@/components/trip/ledger-spend-chart"
+import { tripTabPanelClass, tripTabScrollClass } from "@/components/trip/trip-desk-layout"
 import { TripTravelAffiliate } from "@/components/trip/trip-travel-affiliate"
 import { UpiSettleButton } from "@/components/trip/upi-settle-button"
 import { whatsappInviteMessage, whatsappShareUrl } from "@/lib/whatsapp-invite"
@@ -63,9 +63,7 @@ import {
   type Health,
 } from "@/lib/client-api"
 import {
-  expensesByDay,
   ledgerDaysForViewer,
-  ledgerGroupExpenses,
   ledgerPersonalExpensesForViewer,
   personalExpenditureForMember,
 } from "@/lib/ledger-display"
@@ -105,7 +103,7 @@ function formatDayDots(isoDate: string) {
   return `${d.padStart(2, "0")}.${m.padStart(2, "0")}.${y}`
 }
 
-function formatTripDates(group: Group) {
+export function formatTripDates(group: Group) {
   const { startDate, endDate } = group
   if (!startDate && !endDate) return null
   if (startDate && endDate) {
@@ -467,7 +465,7 @@ export function Shell({
     <div
       className={
         compact
-          ? "relative mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-4 sm:px-5 lg:py-5"
+          ? "relative mx-auto flex h-dvh max-h-dvh w-full max-w-6xl flex-col overflow-hidden px-4 py-4 sm:px-5 lg:py-5"
           : "relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10"
       }
     >
@@ -477,7 +475,7 @@ export function Shell({
       <header
         className={
           compact
-            ? "relative mb-3 flex items-center justify-between gap-3 border-b pb-3"
+            ? "relative mb-3 flex shrink-0 items-center justify-between gap-3 border-b pb-3"
             : "relative mb-8 flex items-start justify-between gap-4"
         }
       >
@@ -542,7 +540,15 @@ export function Shell({
           <AlertDescription>{health.notice}</AlertDescription>
         </Alert>
       ) : null}
-      <main className="flex-1">{children}</main>
+      <main
+        className={
+          compact
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "flex-1"
+        }
+      >
+        {children}
+      </main>
     </div>
   )
 }
@@ -1008,14 +1014,9 @@ export function TripDesk({
   const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
   const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
-  const groupLedgerExpenses = useMemo(() => ledgerGroupExpenses(group), [group])
   const personalLedgerExpenses = useMemo(
     () => ledgerPersonalExpensesForViewer(group, seat?.id ?? null),
     [group, seat?.id]
-  )
-  const ledgerByDay = useMemo(
-    () => expensesByDay(groupLedgerExpenses),
-    [groupLedgerExpenses]
   )
   const ledgerDays = useMemo(
     () => ledgerDaysForViewer(group, seat?.id ?? null),
@@ -1062,13 +1063,31 @@ export function TripDesk({
     }
   }, [group.name])
 
+  useEffect(() => {
+    function scrollToLedgerHash() {
+      const hash = typeof window !== "undefined" ? window.location.hash : ""
+      if (!hash.startsWith("#ledger-day-")) return
+      const el = document.querySelector(hash)
+      if (el instanceof HTMLElement) {
+        window.requestAnimationFrame(() => {
+          el.scrollIntoView({ behavior: "smooth", block: "start" })
+        })
+      }
+    }
+    scrollToLedgerHash()
+    window.addEventListener("hashchange", scrollToLedgerHash)
+    return () => window.removeEventListener("hashchange", scrollToLedgerHash)
+  }, [group.id])
+
   const loginHref = `/login?next=${encodeURIComponent(tripPath)}`
   const signupHref = `/signup?next=${encodeURIComponent(tripPath)}`
 
+  const analyticsPath = `${tripPath}/analytics`
+
   return (
-    <div className="space-y-4 lg:space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:gap-3">
       {!profile ? (
-        <Alert className="py-2">
+        <Alert className="shrink-0 py-2">
           <Users />
           <AlertTitle>Viewing as guest</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -1082,7 +1101,7 @@ export function TripDesk({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <h2 className="font-heading text-2xl tracking-tight sm:text-3xl lg:text-2xl">
@@ -1191,20 +1210,28 @@ export function TripDesk({
         </div>
       </div>
 
-      <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
+      <div className="shrink-0">
+        <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
+      </div>
 
-      <TripTravelAffiliate group={group} />
+      <div className="shrink-0">
+        <TripTravelAffiliate group={group} />
+      </div>
 
-      <Tabs defaultValue="ledger" className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-        <TabsList className="shrink-0">
+      <Tabs defaultValue="ledger" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="h-auto shrink-0 flex-wrap gap-1 p-[3px]">
           <TabsTrigger value="settle">Settle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
+          <Link
+            href={analyticsPath}
+            className="relative inline-flex h-8 items-center justify-center rounded-md border border-transparent px-2.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-colors hover:bg-background/80 hover:text-foreground"
+          >
+            Analytics
+          </Link>
         </TabsList>
-        <TabsContent
-          value="settle"
-          className="space-y-2 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-2 lg:pt-2"
-        >
+        <TabsContent value="settle" className={tripTabPanelClass}>
+          <div className={`space-y-2 ${tripTabScrollClass}`}>
           {transfers.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1351,19 +1378,30 @@ export function TripDesk({
               )
             })}
           </div>
+          </div>
         </TabsContent>
-        <TabsContent
-          value="ledger"
-          className="space-y-4 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-3 lg:pt-2"
-        >
-          {groupLedgerExpenses.length > 0 ||
-          (group.payments ?? []).some((item) => !item.voidedAt) ? (
-            <LedgerSpendChart
-              group={group}
-              ledgerByDay={ledgerByDay}
-              memberLabel={(id) => memberName(group, id)}
-            />
+        <TabsContent value="ledger" className={tripTabPanelClass}>
+          {ledgerDays.length >= 2 ? (
+            <div className="mb-2 flex shrink-0 justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={collapseAllLedgerDays}
+              >
+                Collapse all
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={expandAllLedgerDays}
+              >
+                Expand all
+              </Button>
+            </div>
           ) : null}
+          <div className={`space-y-4 ${tripTabScrollClass}`}>
           {ledgerDays.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1374,36 +1412,16 @@ export function TripDesk({
               </CardHeader>
             </Card>
           ) : (
-            <>
-              {ledgerDays.length >= 2 ? (
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    onClick={collapseAllLedgerDays}
-                  >
-                    Collapse all
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    onClick={expandAllLedgerDays}
-                  >
-                    Expand all
-                  </Button>
-                </div>
-              ) : null}
+            <div className="space-y-4">
               {ledgerDays.map((day) => {
                 const collapsed = collapsedDays.has(day.date)
                 return (
                   <section
                     key={day.date}
                     id={`ledger-day-${day.date}`}
-                    className="scroll-mt-14 space-y-3"
+                    className="scroll-mt-16 overflow-hidden rounded-xl border bg-card/50"
                   >
-                    <div className="sticky top-0 z-10 grid grid-cols-1 items-center gap-x-4 gap-y-2 border-b bg-background/95 py-2 backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <div className="sticky top-0 z-10 grid grid-cols-1 items-center gap-x-4 gap-y-2 border-b bg-card px-3 py-2.5 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                       <button
                         type="button"
                         className="flex min-w-0 items-center gap-2 text-left"
@@ -1438,7 +1456,7 @@ export function TripDesk({
                       </p>
                     </div>
                     {!collapsed ? (
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3">
                         {day.payments.map((payment) => {
                           const canEditPayment =
                             profile &&
@@ -1563,7 +1581,7 @@ export function TripDesk({
                   </section>
                 )
               })}
-            </>
+            </div>
           )}
           {personalLedgerExpenses.length > 0 ? (
             <section className="space-y-2 border-t pt-4">
@@ -1597,11 +1615,10 @@ export function TripDesk({
               </div>
             </section>
           ) : null}
+          </div>
         </TabsContent>
-        <TabsContent
-          value="people"
-          className="space-y-2 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:pt-2"
-        >
+        <TabsContent value="people" className={tripTabPanelClass}>
+          <div className={`space-y-2 ${tripTabScrollClass}`}>
           {group.members.map((member) => {
             const cover = member.coveredByMemberId
               ? group.members.find((item) => item.id === member.coveredByMemberId)
@@ -1718,6 +1735,7 @@ export function TripDesk({
               <Plus /> Add a nickname
             </Button>
           ) : null}
+          </div>
         </TabsContent>
       </Tabs>
 

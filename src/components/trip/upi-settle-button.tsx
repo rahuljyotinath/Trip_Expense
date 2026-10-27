@@ -16,7 +16,7 @@ import { formatMoney } from "@/lib/money"
 import {
   buildUpiPayUri,
   isLikelyUpiVpa,
-  recallMemberUpiVpa,
+  recalledMemberUpiVpa,
   rememberMemberUpiVpa,
 } from "@/lib/upi-pay"
 
@@ -40,7 +40,7 @@ export function UpiSettleButton({
   const [error, setError] = useState<string | null>(null)
 
   function openDialog() {
-    setVpa(recallMemberUpiVpa(payeeMemberId) ?? "")
+    setVpa(recalledMemberUpiVpa(payeeMemberId) ?? "")
     setError(null)
     setOpen(true)
   }

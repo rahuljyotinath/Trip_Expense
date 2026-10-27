@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo } from "react"
 import { formatMoney } from "@/lib/money"
 import type { ExpensesByDay } from "@/lib/ledger-display"
@@ -27,10 +28,12 @@ export function LedgerSpendChart({
   group,
   ledgerByDay,
   memberLabel,
+  tripPath,
 }: {
   group: Group
   ledgerByDay: ExpensesByDay[]
   memberLabel: (memberId: string) => string
+  tripPath?: string
 }) {
   const memberFlow = useMemo(() => groupMemberPaidAndReceived(group), [group])
   const maxPaid = useMemo(
@@ -109,18 +112,9 @@ export function LedgerSpendChart({
           <div className="flex items-end gap-1.5 overflow-x-auto pb-1">
             {ledgerByDay.map((day) => {
               const heightPct = maxDay > 0 ? (day.total / maxDay) * 100 : 0
-              return (
-                <button
-                  key={day.date}
-                  type="button"
-                  className="flex min-w-[2.75rem] flex-col items-center gap-1 rounded-md px-1 py-1 text-center transition-colors hover:bg-muted/60"
-                  title={`${formatDayDots(day.date)} · ${formatMoney(day.total, group.currency)}`}
-                  onClick={() => {
-                    document
-                      .getElementById(`ledger-day-${day.date}`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                  }}
-                >
+              const title = `${formatDayDots(day.date)} · ${formatMoney(day.total, group.currency)}`
+              const inner = (
+                <>
                   <span className="flex h-16 w-full items-end justify-center">
                     <span
                       className="w-full max-w-[2rem] rounded-t-sm bg-primary/50"
@@ -130,6 +124,35 @@ export function LedgerSpendChart({
                   <span className="text-[10px] leading-tight text-muted-foreground tabular-nums">
                     {formatDayDots(day.date)}
                   </span>
+                </>
+              )
+              const className =
+                "flex min-w-[2.75rem] flex-col items-center gap-1 rounded-md px-1 py-1 text-center transition-colors hover:bg-muted/60"
+              if (tripPath) {
+                return (
+                  <Link
+                    key={day.date}
+                    href={`${tripPath}#ledger-day-${day.date}`}
+                    className={className}
+                    title={title}
+                  >
+                    {inner}
+                  </Link>
+                )
+              }
+              return (
+                <button
+                  key={day.date}
+                  type="button"
+                  className={className}
+                  title={title}
+                  onClick={() => {
+                    document
+                      .getElementById(`ledger-day-${day.date}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }}
+                >
+                  {inner}
                 </button>
               )
             })}

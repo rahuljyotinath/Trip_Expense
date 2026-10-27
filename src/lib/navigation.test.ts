@@ -4,6 +4,7 @@ import { safeReturnPath } from "./navigation"
 
 test("safeReturnPath accepts in-app paths", () => {
   assert.equal(safeReturnPath("/trip/g_1"), "/trip/g_1")
+  assert.equal(safeReturnPath("/trip/g_1/analytics"), "/trip/g_1/analytics")
   assert.equal(safeReturnPath("/login?next=/trip/g_1"), "/login?next=/trip/g_1")
 })
 
