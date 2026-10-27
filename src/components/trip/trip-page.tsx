@@ -111,7 +111,7 @@ export function TripPage() {
 
   if (loading) {
     return (
-      <Shell health={health} profile={profile}>
+      <Shell health={health} profile={profile} compact>
         <p className="text-sm text-muted-foreground">Loading trip…</p>
       </Shell>
     )
@@ -119,7 +119,7 @@ export function TripPage() {
 
   if (loadError || !group) {
     return (
-      <Shell health={health} profile={profile}>
+      <Shell health={health} profile={profile} compact>
         <Alert variant="destructive">
           <AlertCircle />
           <AlertTitle>Trip not found</AlertTitle>
@@ -138,6 +138,7 @@ export function TripPage() {
     <Shell
       health={health}
       profile={profile}
+      compact
       onHome={() => router.push("/")}
       onLogout={profile ? () => void onLogout() : undefined}
     >

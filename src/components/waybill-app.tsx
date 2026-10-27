@@ -57,6 +57,7 @@ import {
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
+import { ledgerExpensesForDisplay } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
@@ -85,6 +86,12 @@ function formatDay(date: string) {
     month: "short",
     year: "numeric",
   })
+}
+
+function formatDayDots(isoDate: string) {
+  const [y, m, d] = isoDate.split("-")
+  if (!y || !m || !d) return isoDate
+  return `${d.padStart(2, "0")}.${m.padStart(2, "0")}.${y}`
 }
 
 function formatTripDates(group: Group) {
@@ -436,29 +443,53 @@ export function Shell({
   profile,
   onHome,
   onLogout,
+  compact = false,
 }: {
   children: React.ReactNode
   health: Health | null
   profile: PublicProfile | null
   onHome?: () => void
   onLogout?: () => void
+  compact?: boolean
 }) {
   return (
-    <div className="relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-48 hero-glow" aria-hidden />
-      <header className="relative mb-8 flex items-start justify-between gap-4">
+    <div
+      className={
+        compact
+          ? "relative mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-4 sm:px-5 lg:py-5"
+          : "relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10"
+      }
+    >
+      {!compact ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-48 hero-glow" aria-hidden />
+      ) : null}
+      <header
+        className={
+          compact
+            ? "relative mb-3 flex items-center justify-between gap-3 border-b pb-3"
+            : "relative mb-8 flex items-start justify-between gap-4"
+        }
+      >
         <button
           type="button"
           onClick={onHome}
           className="rounded-lg text-left transition-opacity hover:opacity-90 disabled:cursor-default"
           disabled={!onHome}
         >
-          <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
-            Group ledger
-          </p>
-          <h1 className="font-heading text-4xl tracking-tight sm:text-5xl sm:text-[2.75rem]">
-            Trip Expenses Balancer
-          </h1>
+          {compact ? (
+            <span className="font-heading text-lg tracking-tight sm:text-xl">
+              Trip Expenses Balancer
+            </span>
+          ) : (
+            <>
+              <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
+                Group ledger
+              </p>
+              <h1 className="font-heading text-4xl tracking-tight sm:text-5xl sm:text-[2.75rem]">
+                Trip Expenses Balancer
+              </h1>
+            </>
+          )}
         </button>
         <div className="text-right text-sm">
           {profile ? (
@@ -483,14 +514,14 @@ export function Shell({
         </div>
       </header>
       {health?.warning ? (
-        <Alert className="mb-4">
+        <Alert className={compact ? "mb-2 py-2" : "mb-4"}>
           <AlertCircle />
           <AlertTitle>Storage</AlertTitle>
           <AlertDescription>{health.warning}</AlertDescription>
         </Alert>
       ) : null}
       {health?.notice ? (
-        <Alert className="mb-4" variant="destructive">
+        <Alert className={compact ? "mb-2 py-2" : "mb-4"} variant="destructive">
           <AlertCircle />
           <AlertTitle>Connection</AlertTitle>
           <AlertDescription>{health.notice}</AlertDescription>
@@ -857,13 +888,15 @@ function TripSummaryStrip({
           }
 
   return (
-    <div className="rounded-xl border bg-card/50 px-4 py-3">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="rounded-xl border bg-card/50 px-3 py-2 lg:px-4 lg:py-2.5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-2">
         <div>
-          <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+          <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
             Trip spend
           </p>
-          <p className="font-heading text-xl">{formatMoney(stats.totalSpend, group.currency)}</p>
+          <p className="font-heading text-lg lg:text-xl">
+            {formatMoney(stats.totalSpend, group.currency)}
+          </p>
         </div>
         {seatId && mine ? (
           <>
@@ -871,23 +904,25 @@ function TripSummaryStrip({
               <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
                 Your share
               </p>
-              <p className="font-heading text-xl">
+              <p className="font-heading text-lg lg:text-xl">
                 {formatMoney(mine.share, group.currency)}
               </p>
             </div>
             <div>
-              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
                 You paid
               </p>
-              <p className="font-heading text-xl">
+              <p className="font-heading text-lg lg:text-xl">
                 {formatMoney(mine.paid, group.currency)}
               </p>
             </div>
             <div>
-              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
                 {balance.label}
               </p>
-              <p className={`font-heading text-xl ${balance.className}`}>{balance.text}</p>
+              <p className={`font-heading text-lg lg:text-xl ${balance.className}`}>
+                {balance.text}
+              </p>
             </div>
           </>
         ) : (
@@ -944,14 +979,8 @@ export function TripDesk({
   const balances = useMemo(() => settlementBalances(group), [group])
   const transfers = useMemo(() => simplifyDebts(group), [group])
   const ledgerExpenses = useMemo(
-    () =>
-      group.expenses
-        .filter((item) => !item.voidedAt)
-        .sort((a, b) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date)
-          return b.createdAt.localeCompare(a.createdAt)
-        }),
-    [group.expenses]
+    () => ledgerExpensesForDisplay(group, seat?.id ?? null),
+    [group, seat?.id]
   )
   const ledgerByDay = useMemo(() => {
     const days: { date: string; expenses: Expense[] }[] = []
@@ -968,7 +997,14 @@ export function TripDesk({
   const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [draftExpenseDate, setDraftExpenseDate] = useState<string | null>(null)
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
+
+  function openNewExpense(forDate?: string) {
+    setEditingExpense(null)
+    setDraftExpenseDate(forDate ?? null)
+    onExpenseOpen(true)
+  }
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const shareUrl =
@@ -985,9 +1021,9 @@ export function TripDesk({
   const signupHref = `/signup?next=${encodeURIComponent(tripPath)}`
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-3">
       {!profile ? (
-        <Alert>
+        <Alert className="py-2">
           <Users />
           <AlertTitle>Viewing as guest</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -1001,31 +1037,35 @@ export function TripDesk({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-mono text-[11px] tracking-[0.22em] text-muted-foreground uppercase">
-            Trip
-          </p>
-          <h2 className="font-heading text-4xl">{group.name}</h2>
-          {tripDates ? (
-            <p className="mt-1 text-sm text-muted-foreground">{tripDates}</p>
-          ) : null}
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <h2 className="font-heading text-2xl tracking-tight sm:text-3xl lg:text-2xl">
+              {group.name}
+            </h2>
+            {tripDates ? (
+              <p className="text-sm text-muted-foreground">{tripDates}</p>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             {seat
-              ? `On the roster as ${seat.name}.`
-              : "You can look, but claim a name before logging spends."}
+              ? `You: ${seat.name}.`
+              : "Claim a nickname to log spends."}
+            {isOpener ? (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setTripEditOpen(true)}
+                >
+                  Edit trip
+                </button>
+              </>
+            ) : null}
           </p>
-          {isOpener ? (
-            <Button
-              variant="link"
-              className="h-auto p-0 text-sm"
-              onClick={() => setTripEditOpen(true)}
-            >
-              Edit trip details
-            </Button>
-          ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-1.5 lg:gap-2">
           <Button
             variant="outline"
             onClick={async () => {
@@ -1088,14 +1128,7 @@ export function TripDesk({
               >
                 <Banknote /> Paid back
               </Button>
-              <Button
-                size="lg"
-                onClick={() => {
-                  setEditingExpense(null)
-                  onExpenseOpen(true)
-                }}
-                disabled={!canWrite}
-              >
+              <Button onClick={() => openNewExpense()} disabled={!canWrite}>
                 <Receipt /> Add spend
               </Button>
             </>
@@ -1105,13 +1138,16 @@ export function TripDesk({
 
       <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
 
-      <Tabs defaultValue="ledger">
-        <TabsList>
+      <Tabs defaultValue="ledger" className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <TabsList className="shrink-0">
           <TabsTrigger value="settle">Settle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
         </TabsList>
-        <TabsContent value="settle" className="space-y-3 pt-4">
+        <TabsContent
+          value="settle"
+          className="space-y-2 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-2 lg:pt-2"
+        >
           {transfers.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1227,13 +1263,13 @@ export function TripDesk({
               })}
             </div>
           ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {group.members.map((member) => {
               const value = balances[member.id] ?? 0
               return (
                 <div
                   key={member.id}
-                  className="interactive-row flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="interactive-row flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm lg:px-3 lg:py-2"
                 >
                   <span>
                     {member.name}
@@ -1248,27 +1284,45 @@ export function TripDesk({
             })}
           </div>
         </TabsContent>
-        <TabsContent value="ledger" className="space-y-6 pt-4">
+        <TabsContent
+          value="ledger"
+          className="space-y-4 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-3 lg:pt-2"
+        >
           {ledgerExpenses.length === 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Blank page</CardTitle>
+                <CardTitle>No shared spends to show</CardTitle>
                 <CardDescription>
-                  Date, amount, reason, who is on the bill. Split equally among
-                  everyone you check.
+                  {seat
+                    ? "Only bills you're on with claimed members appear here (oldest first)."
+                    : "Sign in and claim a seat to see your shared ledger."}
                 </CardDescription>
               </CardHeader>
             </Card>
           ) : (
             ledgerByDay.map((day) => (
               <section key={day.date} className="space-y-3">
-                <div className="sticky top-0 z-10 flex items-baseline justify-between gap-3 border-b bg-background/95 py-2 backdrop-blur-sm">
-                  <h3 className="font-heading text-lg">{formatDay(day.date)}</h3>
-                  <p className="font-heading text-lg tabular-nums">
-                    {formatMoney(day.total, group.currency)}
-                  </p>
+                <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b bg-background/95 py-1.5 backdrop-blur-sm">
+                  <h3 className="font-heading text-base">{formatDay(day.date)}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canWrite ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => openNewExpense(day.date)}
+                      >
+                        <Receipt className="size-3.5" />
+                        Add expense for {formatDayDots(day.date)}
+                      </Button>
+                    ) : null}
+                    <p className="font-heading text-base tabular-nums">
+                      {formatMoney(day.total, group.currency)}
+                    </p>
+                  </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {day.expenses.map((expense) => {
                     const canEdit =
                       profile &&
@@ -1283,8 +1337,8 @@ export function TripDesk({
                         size="sm"
                         className="flex flex-col motion-safe:active:scale-[0.99]"
                       >
-                        <CardContent className="flex flex-1 flex-col gap-2 pt-1">
-                          <p className="font-heading text-2xl leading-none tabular-nums sm:text-3xl">
+                        <CardContent className="flex flex-1 flex-col gap-1.5 pt-1">
+                          <p className="font-heading text-xl leading-none tabular-nums lg:text-2xl">
                             {formatMoney(expense.amount, group.currency)}
                           </p>
                           <Badge variant="secondary" className="w-fit text-sm">
@@ -1330,7 +1384,10 @@ export function TripDesk({
             ))
           )}
         </TabsContent>
-        <TabsContent value="people" className="space-y-3 pt-4">
+        <TabsContent
+          value="people"
+          className="space-y-2 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:pt-2"
+        >
           {group.members.map((member) => {
             const cover = member.coveredByMemberId
               ? group.members.find((item) => item.id === member.coveredByMemberId)
@@ -1561,16 +1618,21 @@ export function TripDesk({
           <ExpenseDialog
             open={expenseOpen}
             expense={editingExpense}
+            defaultDate={editingExpense ? null : draftExpenseDate}
             group={group}
             profile={profile}
             busy={busy}
             onOpen={(open) => {
               onExpenseOpen(open)
-              if (!open) setEditingExpense(null)
+              if (!open) {
+                setEditingExpense(null)
+                setDraftExpenseDate(null)
+              }
             }}
             onSaved={() => {
               onExpenseOpen(false)
               setEditingExpense(null)
+              setDraftExpenseDate(null)
             }}
             onGroup={onGroup}
             onRefresh={onRefresh}
@@ -1732,6 +1794,7 @@ function TripEditForm({
 function ExpenseDialog({
   open,
   expense,
+  defaultDate,
   group,
   profile,
   busy,
@@ -1744,6 +1807,7 @@ function ExpenseDialog({
 }: {
   open: boolean
   expense: Expense | null
+  defaultDate?: string | null
   group: Group
   profile: PublicProfile
   busy: boolean
@@ -1758,8 +1822,9 @@ function ExpenseDialog({
     <Dialog open={open} onOpenChange={onOpen}>
       {open ? (
         <ExpenseForm
-          key={expense?.id ?? "new"}
+          key={expense?.id ?? `new-${defaultDate ?? "today"}`}
           expense={expense}
+          defaultDate={defaultDate}
           group={group}
           profile={profile}
           busy={busy}
@@ -1778,6 +1843,7 @@ function ExpenseForm({
   group,
   profile,
   expense,
+  defaultDate,
   busy,
   onSaved,
   onGroup,
@@ -1788,6 +1854,7 @@ function ExpenseForm({
   group: Group
   profile: PublicProfile
   expense: Expense | null
+  defaultDate?: string | null
   busy: boolean
   onSaved: () => void
   onGroup: (group: Group) => void
@@ -1797,7 +1864,7 @@ function ExpenseForm({
 }) {
   const seat = mySeat(group, profile.id)
   const isEdit = Boolean(expense)
-  const [date, setDate] = useState(expense?.date ?? todayIsoDate())
+  const [date, setDate] = useState(expense?.date ?? defaultDate ?? todayIsoDate())
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "")
   const [reason, setReason] = useState(expense?.reason ?? "")
   const [paidBy, setPaidBy] = useState(
