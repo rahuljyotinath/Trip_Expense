@@ -1356,7 +1356,8 @@ export function TripDesk({
           value="ledger"
           className="space-y-4 pt-3 md:max-h-[min(68vh,calc(100dvh-13rem))] md:overflow-y-auto md:overscroll-contain lg:space-y-3 lg:pt-2"
         >
-          {groupLedgerExpenses.length > 0 ? (
+          {groupLedgerExpenses.length > 0 ||
+          (group.payments ?? []).some((item) => !item.voidedAt) ? (
             <LedgerSpendChart
               group={group}
               ledgerByDay={ledgerByDay}

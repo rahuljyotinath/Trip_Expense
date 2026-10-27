@@ -3,12 +3,24 @@
 import { useMemo } from "react"
 import { formatMoney } from "@/lib/money"
 import type { ExpensesByDay } from "@/lib/ledger-display"
-import { groupPaidByMember } from "@/lib/ledger-display"
+import { groupMemberPaidAndReceived } from "@/lib/ledger-display"
 import type { Group } from "@/lib/types"
 
 function formatDayDots(isoDate: string) {
   const [y, m, d] = isoDate.split("-")
   return `${d}.${m}.${y}`
+}
+
+function formatPaidReceived(
+  paid: number,
+  received: number,
+  currency: string
+) {
+  const parts: string[] = []
+  if (paid > 0) parts.push(`Paid ${formatMoney(paid, currency)}`)
+  if (received > 0) parts.push(`Received ${formatMoney(received, currency)}`)
+  if (parts.length === 0) return "—"
+  return parts.join(" · ")
 }
 
 export function LedgerSpendChart({
@@ -20,37 +32,70 @@ export function LedgerSpendChart({
   ledgerByDay: ExpensesByDay[]
   memberLabel: (memberId: string) => string
 }) {
-  const paidByMember = useMemo(() => groupPaidByMember(group), [group])
-  const maxPaid = paidByMember[0]?.amount ?? 0
+  const memberFlow = useMemo(() => groupMemberPaidAndReceived(group), [group])
+  const maxPaid = useMemo(
+    () => Math.max(0, ...memberFlow.map((row) => row.paid)),
+    [memberFlow]
+  )
+  const maxReceived = useMemo(
+    () => Math.max(0, ...memberFlow.map((row) => row.received)),
+    [memberFlow]
+  )
   const maxDay = useMemo(
     () => Math.max(0, ...ledgerByDay.map((day) => day.total)),
     [ledgerByDay]
   )
 
-  if (paidByMember.length === 0 && ledgerByDay.length === 0) return null
+  const showMemberFlow = memberFlow.some((row) => row.paid > 0 || row.received > 0)
+
+  if (!showMemberFlow && ledgerByDay.length === 0) return null
 
   return (
     <div className="space-y-4 rounded-xl border bg-card/50 p-4">
-      {paidByMember.length > 0 ? (
+      {showMemberFlow ? (
         <div className="space-y-2">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Who paid (group)
+            Who paid &amp; received (group)
           </p>
-          <ul className="space-y-2.5">
-            {paidByMember.map((row) => (
-              <li key={row.memberId} className="grid grid-cols-[minmax(0,6rem)_1fr_auto] items-center gap-3 text-sm">
-                <span className="truncate font-medium">{memberLabel(row.memberId)}</span>
-                <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary/70"
-                    style={{
-                      width: maxPaid > 0 ? `${(row.amount / maxPaid) * 100}%` : "0%",
-                    }}
-                  />
+          <ul className="space-y-3">
+            {memberFlow.map((row) => (
+              <li key={row.memberId} className="space-y-1.5 text-sm">
+                <div className="grid grid-cols-[minmax(0,6rem)_1fr_auto] items-center gap-3">
+                  <span className="truncate font-medium">{memberLabel(row.memberId)}</span>
+                  <div className="space-y-1">
+                    <div className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground uppercase">Paid</span>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary/70"
+                          style={{
+                            width:
+                              maxPaid > 0 && row.paid > 0
+                                ? `${(row.paid / maxPaid) * 100}%`
+                                : "0%",
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground uppercase">Rcvd</span>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-moss/70"
+                          style={{
+                            width:
+                              maxReceived > 0 && row.received > 0
+                                ? `${(row.received / maxReceived) * 100}%`
+                                : "0%",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="max-w-[11rem] text-right text-xs leading-snug tabular-nums text-muted-foreground">
+                    {formatPaidReceived(row.paid, row.received, group.currency)}
+                  </span>
                 </div>
-                <span className="min-w-[4.5rem] text-right tabular-nums text-muted-foreground">
-                  {formatMoney(row.amount, group.currency)}
-                </span>
               </li>
             ))}
           </ul>

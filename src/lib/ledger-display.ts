@@ -127,6 +127,46 @@ export function groupPaidByMember(group: Group): MemberPaidTotal[] {
     .sort((a, b) => b.amount - a.amount)
 }
 
+export type MemberPaidBackReceived = {
+  memberId: string
+  amount: number
+}
+
+/** Paid-back cash received per member (all non-void payments). */
+export function groupPaidBackReceivedByMember(group: Group): MemberPaidBackReceived[] {
+  const totals = new Map<string, number>()
+  for (const payment of ledgerPersonalPayments(group)) {
+    totals.set(
+      payment.toMemberId,
+      (totals.get(payment.toMemberId) ?? 0) + payment.amount
+    )
+  }
+  return [...totals.entries()]
+    .map(([memberId, amount]) => ({ memberId, amount }))
+    .sort((a, b) => b.amount - a.amount)
+}
+
+export type MemberPaidAndReceived = {
+  memberId: string
+  paid: number
+  received: number
+}
+
+export function groupMemberPaidAndReceived(group: Group): MemberPaidAndReceived[] {
+  const paidMap = new Map(groupPaidByMember(group).map((row) => [row.memberId, row.amount]))
+  const receivedMap = new Map(
+    groupPaidBackReceivedByMember(group).map((row) => [row.memberId, row.amount])
+  )
+  const ids = new Set([...paidMap.keys(), ...receivedMap.keys()])
+  return [...ids]
+    .map((memberId) => ({
+      memberId,
+      paid: paidMap.get(memberId) ?? 0,
+      received: receivedMap.get(memberId) ?? 0,
+    }))
+    .sort((a, b) => b.paid + b.received - (a.paid + a.received))
+}
+
 /** Solo self-pay only — for a member's personal expenditure total (not group trip spend). */
 export function personalExpenditureForMember(group: Group, memberId: string): number {
   return ledgerPersonalExpenses(group)
