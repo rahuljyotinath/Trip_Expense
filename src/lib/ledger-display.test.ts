@@ -481,7 +481,7 @@ test("expenseRowMeta lists payer and participants", () => {
     ],
   })
   assert.match(expenseRowMeta(g, g.expenses[0]!, "m1"), /Paid by Seemon/)
-  assert.match(expenseRowMeta(g, g.expenses[0]!, "m1"), /With: you, Seemon, Priya/)
+  assert.match(expenseRowMeta(g, g.expenses[0]!, "m1"), /Shared by you, Seemon, Priya/)
 })
 
 test("ledgerDayItems respects ledgerDayOrder", () => {

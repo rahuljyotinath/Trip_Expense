@@ -1,6 +1,7 @@
 import { readStore, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { addContact, removeContact } from "@/lib/operations"
+import { contactListFromEnriched } from "@/lib/contact-list"
 import { listContactsForProfile } from "@/lib/trip-contacts"
 import { sessionProfileId } from "@/lib/session"
 import { connection } from "next/server"
@@ -16,7 +17,9 @@ export async function GET() {
   try {
     await connection()
     const store = await readStore()
-    const contacts = listContactsForProfile(store, sessionId)
+    const contacts = contactListFromEnriched(
+      listContactsForProfile(store, sessionId)
+    )
     return json({ contacts })
   } catch (error) {
     return fail(error)
@@ -44,7 +47,9 @@ export async function POST(request: Request) {
           targetProfileId: body.targetProfileId ?? "",
         })
       )
-      return json({ contacts: result.contacts })
+      return json({
+        contacts: contactListFromEnriched(result.contacts),
+      })
     }
     const result = await updateStore((store) =>
       addContact(store, {
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
         targetProfileId: body.targetProfileId,
       })
     )
-    return json({ contacts: result.contacts })
+    return json({ contacts: contactListFromEnriched(result.contacts) })
   } catch (error) {
     return fail(error)
   }

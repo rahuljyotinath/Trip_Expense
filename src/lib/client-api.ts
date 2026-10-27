@@ -5,6 +5,8 @@ import {
   type Group,
   type JoinRequest,
   type PublicProfile,
+  type PublicProfileView,
+  type LinkedTripProfile,
   type TripInvite,
   type SplitMode,
   type StorageMode,
@@ -33,7 +35,10 @@ import {
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
+import { linkedProfilesForGroup } from "@/lib/linked-trip-profiles"
 import { joinRequestForProfile } from "@/lib/trip-invites"
+import { findProfileForContactSearch } from "@/lib/trip-contacts"
+import { publicProfileView } from "@/lib/types"
 import { nowIso } from "@/lib/ids"
 import {
   browserOutbox,
@@ -410,6 +415,37 @@ export async function fetchProfile(id: string) {
   return data.profile
 }
 
+export async function fetchPublicProfileByUsername(
+  username: string
+): Promise<PublicProfileView> {
+  if (mode === "unconfigured") {
+    const store = readLocalStore()
+    const match = findProfileForContactSearch(store, `@${username}`)
+    if (!match?.username) throw new Error("Profile not found.")
+    return publicProfileView(match)
+  }
+  const data = await request<{ profile: PublicProfileView }>(
+    `/api/profiles/view?username=${encodeURIComponent(username)}`
+  )
+  if (!data.profile) throw new Error("Profile not found.")
+  return data.profile
+}
+
+export async function previewProfileForContactQuery(
+  query: string
+): Promise<PublicProfileView | null> {
+  const q = query.trim()
+  if (!q) return null
+  if (mode === "unconfigured") {
+    const match = findProfileForContactSearch(readLocalStore(), q)
+    return match?.username ? publicProfileView(match) : null
+  }
+  const data = await request<{ profile: PublicProfileView | null }>(
+    `/api/profiles/preview?q=${encodeURIComponent(q)}`
+  )
+  return data.profile ?? null
+}
+
 export async function fetchMyGroups(profileId: string) {
   if (mode === "unconfigured") {
     return groupsForProfile(readLocalStore(), profileId)
@@ -476,9 +512,7 @@ export async function respondTripInvite(action: "accept" | "decline", inviteId: 
 export type KnownContact = {
   id: string
   name: string
-  username: string | null
-  email: string | null
-  phone: string | null
+  username: string
   contactId: string
   source: "search" | "trip" | "invite"
   createdAt: string
@@ -508,11 +542,17 @@ export async function removeKnownContact(targetProfileId: string) {
   return data.contacts ?? []
 }
 
+export type PendingJoinRequestRow = JoinRequest & {
+  profileName?: string
+  profileUsername?: string | null
+}
+
 export type GroupFetchDetail = {
   group: Group
   joinRequest: JoinRequest | null
-  pendingJoinRequests: JoinRequest[]
+  pendingJoinRequests: PendingJoinRequestRow[]
   pendingTripInvites: TripInvite[]
+  linkedProfiles: LinkedTripProfile[]
 }
 
 async function requestGroupById(
@@ -535,8 +575,9 @@ async function requestGroupById(
     const data = (await response.json().catch(() => ({}))) as {
       group?: Group
       joinRequest?: JoinRequest | null
-      pendingJoinRequests?: JoinRequest[]
+      pendingJoinRequests?: PendingJoinRequestRow[]
       pendingTripInvites?: TripInvite[]
+      linkedProfiles?: LinkedTripProfile[]
       error?: string
     }
     if (response.status === 503 || data.error === "unconfigured") {
@@ -556,6 +597,7 @@ async function requestGroupById(
       joinRequest: data.joinRequest ?? null,
       pendingJoinRequests: data.pendingJoinRequests ?? [],
       pendingTripInvites: data.pendingTripInvites ?? [],
+      linkedProfiles: data.linkedProfiles ?? [],
     }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -583,6 +625,7 @@ export async function fetchGroupDetail(
       joinRequest: profileId ? joinRequestForProfile(store, id, profileId) : null,
       pendingJoinRequests: [],
       pendingTripInvites: [],
+      linkedProfiles: linkedProfilesForGroup(store, group),
     }
   }
   const detail = await requestGroupById(id, true, options?.joinCode)
@@ -674,6 +717,7 @@ function runGroupPatchMutator(
       profileId,
       email: body.email as string | null | undefined,
       phone: body.phone as string | null | undefined,
+      targetProfileId: body.targetProfileId as string | null | undefined,
     })
   }
   if (action === "revoke-trip-invite") {

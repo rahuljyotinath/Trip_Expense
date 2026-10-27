@@ -663,6 +663,7 @@ export function sendTripInvite(
     profileId: string
     email?: string | null
     phone?: string | null
+    targetProfileId?: string | null
   }
 ) {
   const group = requireGroup(store, input.groupId)
@@ -672,6 +673,14 @@ export function sendTripInvite(
   requireSeated(group, input.profileId)
   let invitedEmail = normalizeInviteEmail(input.email)
   let invitedPhone = normalizeInvitePhone(input.phone)
+  const targetId = input.targetProfileId?.trim()
+  if (targetId) {
+    const target = store.profiles.find((item) => item.id === targetId)
+    if (target) {
+      invitedEmail = invitedEmail ?? normalizeInviteEmail(target.email)
+      invitedPhone = invitedPhone ?? normalizeInvitePhone(target.phone)
+    }
+  }
   if (!invitedEmail && !invitedPhone && input.email?.trim()) {
     const found = findProfileForContactSearch(store, input.email.trim())
     if (found) {

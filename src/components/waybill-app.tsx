@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { ProfileLink } from "@/components/profile/profile-link"
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -63,6 +64,7 @@ import {
   fetchKnownContacts,
   addKnownContact,
   removeKnownContact,
+  previewProfileForContactQuery,
   type KnownContact,
   fetchMyGroups,
   loadHealth,
@@ -75,8 +77,10 @@ import {
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
+import { usernameForMemberProfile } from "@/lib/linked-trip-profiles"
+import type { LinkedTripProfile } from "@/lib/types"
 import {
-  expenseRowMeta,
+  expenseRowMetaParts,
   expenseViewerSecondAmount,
   ledgerDayItems,
   ledgerDaysForViewer,
@@ -687,6 +691,22 @@ function Home({
   onOpen: (id: string) => void
 }) {
   const [contactQuery, setContactQuery] = useState("")
+  const [contactPreview, setContactPreview] = useState<
+    Awaited<ReturnType<typeof previewProfileForContactQuery>>
+  >(null)
+  useEffect(() => {
+    const q = contactQuery.trim()
+    if (!q) {
+      setContactPreview(null)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void previewProfileForContactQuery(q)
+        .then(setContactPreview)
+        .catch(() => setContactPreview(null))
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [contactQuery])
   return (
     <div className="space-y-6">
       {pendingInvites.length > 0 ? (
@@ -770,11 +790,20 @@ function Home({
                 if (!q) return
                 void onAddContact(q)
                 setContactQuery("")
+                setContactPreview(null)
               }}
             >
               Add contact
             </Button>
           </div>
+          {contactPreview?.username ? (
+            <p className="text-sm">
+              Found{" "}
+              <ProfileLink username={contactPreview.username}>
+                {contactPreview.name} (@{contactPreview.username})
+              </ProfileLink>
+            </p>
+          ) : null}
           {knownContacts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Shared trips with linked profiles appear here automatically.
@@ -787,10 +816,17 @@ function Home({
                   className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
                 >
                   <span>
-                    <span className="font-medium">{contact.name}</span>
                     {contact.username ? (
-                      <span className="text-muted-foreground"> @{contact.username}</span>
-                    ) : null}
+                      <ProfileLink username={contact.username}>
+                        {contact.name}
+                        <span className="font-normal text-muted-foreground">
+                          {" "}
+                          @{contact.username}
+                        </span>
+                      </ProfileLink>
+                    ) : (
+                      <span className="font-medium">{contact.name}</span>
+                    )}
                   </span>
                   <Button
                     size="xs"
@@ -1177,6 +1213,7 @@ export function TripDesk({
   fromCache = false,
   pendingJoinRequests = [],
   pendingTripInvites = [],
+  linkedProfiles = [],
 }: {
   profile: PublicProfile | null
   group: Group
@@ -1196,8 +1233,11 @@ export function TripDesk({
   onBusy: (value: boolean) => void
   onClaim?: (memberId: string) => void
   fromCache?: boolean
-  pendingJoinRequests?: Array<JoinRequest & { profileName?: string }>
+  pendingJoinRequests?: Array<
+    JoinRequest & { profileName?: string; profileUsername?: string | null }
+  >
   pendingTripInvites?: import("@/lib/types").TripInvite[]
+  linkedProfiles?: LinkedTripProfile[]
 }) {
   const seat = profile ? mySeat(group, profile.id) : null
   const isOpener = profile ? group.createdByProfileId === profile.id : false
@@ -1205,6 +1245,7 @@ export function TripDesk({
   const [inviteEmail, setInviteEmail] = useState("")
   const [invitePhone, setInvitePhone] = useState("")
   const [inviteContactId, setInviteContactId] = useState("")
+  const [inviteTargetProfileId, setInviteTargetProfileId] = useState("")
   const [knownContacts, setKnownContacts] = useState<KnownContact[]>([])
   const canWrite = Boolean(profile && seat)
   const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
@@ -1685,11 +1726,16 @@ export function TripDesk({
                             viewerMemberId,
                             memberIds
                           )
+                          const rowMeta = expenseRowMetaParts(
+                            group,
+                            expense,
+                            viewerMemberId
+                          )
                           return (
                             <div
                               key={expense.id}
                               {...rowDragHandlers(expense.id)}
-                              className="flex min-h-9 items-center gap-2 px-3 py-1.5"
+                              className="flex min-h-10 items-center gap-2 px-3 py-2"
                             >
                               {canWrite ? (
                                 <GripVertical
@@ -1697,10 +1743,13 @@ export function TripDesk({
                                   aria-hidden
                                 />
                               ) : null}
-                              <div className="min-w-0 flex-1">
+                              <div className="min-w-0 flex-1 space-y-0.5">
                                 <p className="truncate text-sm font-medium">{expense.reason}</p>
+                                <p className="truncate text-base font-semibold leading-snug">
+                                  Paid by {rowMeta.paidByLabel}
+                                </p>
                                 <p className="truncate text-[11px] text-muted-foreground">
-                                  {expenseRowMeta(group, expense, viewerMemberId)}
+                                  Shared by {rowMeta.sharedWith}
                                 </p>
                               </div>
                               <p className="shrink-0 text-right text-sm tabular-nums">
@@ -1818,8 +1867,11 @@ export function TripDesk({
                         setInviteContactId(id)
                         const picked = knownContacts.find((item) => item.id === id)
                         if (picked) {
-                          setInviteEmail(picked.email ?? "")
-                          setInvitePhone(picked.phone ?? "")
+                          setInviteTargetProfileId(picked.id)
+                          setInviteEmail("")
+                          setInvitePhone("")
+                        } else {
+                          setInviteTargetProfileId("")
                         }
                       }}
                     >
@@ -1840,6 +1892,7 @@ export function TripDesk({
                     onChange={(event) => {
                       setInviteEmail(event.target.value)
                       setInviteContactId("")
+                      setInviteTargetProfileId("")
                     }}
                   />
                   <Input
@@ -1848,12 +1901,18 @@ export function TripDesk({
                     onChange={(event) => {
                       setInvitePhone(event.target.value)
                       setInviteContactId("")
+                      setInviteTargetProfileId("")
                     }}
                   />
                 </div>
                 <Button
                   size="sm"
-                  disabled={busy || (!inviteEmail.trim() && !invitePhone.trim())}
+                  disabled={
+                    busy ||
+                    (!inviteTargetProfileId &&
+                      !inviteEmail.trim() &&
+                      !invitePhone.trim())
+                  }
                   onClick={() => {
                     applyGroupPatchOptimistic({
                       group,
@@ -1862,6 +1921,7 @@ export function TripDesk({
                         action: "send-trip-invite",
                         email: inviteEmail.trim() || null,
                         phone: invitePhone.trim() || null,
+                        targetProfileId: inviteTargetProfileId || null,
                         profileId: profile.id,
                       },
                       onGroup,
@@ -1872,6 +1932,7 @@ export function TripDesk({
                         setInviteEmail("")
                         setInvitePhone("")
                         setInviteContactId("")
+                        setInviteTargetProfileId("")
                       },
                     })
                   }}
@@ -1923,7 +1984,15 @@ export function TripDesk({
                         key={request.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-2 text-sm"
                       >
-                        <span>{request.profileName ?? "Traveler"}</span>
+                        <span>
+                          {request.profileUsername ? (
+                            <ProfileLink username={request.profileUsername}>
+                              {request.profileName ?? "Traveler"}
+                            </ProfileLink>
+                          ) : (
+                            (request.profileName ?? "Traveler")
+                          )}
+                        </span>
                         <span className="flex gap-1">
                           <Button
                             size="xs"
@@ -1984,6 +2053,16 @@ export function TripDesk({
               (item) => item.coveredByMemberId === member.id
             )
             const balance = balances[member.id] ?? 0
+            const memberUsername = usernameForMemberProfile(
+              linkedProfiles,
+              member.profileId
+            )
+            const nameLine = (
+              <>
+                {member.name}
+                {profile && member.profileId === profile.id ? " · you" : ""}
+              </>
+            )
             return (
               <div
                 key={member.id}
@@ -1991,8 +2070,11 @@ export function TripDesk({
               >
                 <div className="min-w-0 space-y-1">
                   <p className="font-medium">
-                    {member.name}
-                    {profile && member.profileId === profile.id ? " · you" : ""}
+                    {memberUsername ? (
+                      <ProfileLink username={memberUsername}>{nameLine}</ProfileLink>
+                    ) : (
+                      nameLine
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {member.profileId

@@ -294,13 +294,18 @@ export function ledgerDayItems(
   return result
 }
 
-/** Muted subtitle for a group ledger expense row. */
-export function expenseRowMeta(
+export type ExpenseRowMeta = {
+  paidByLabel: string
+  sharedWith: string
+}
+
+/** Payer and split roster for a group ledger expense row. */
+export function expenseRowMetaParts(
   group: Group,
   expense: Expense,
   viewerMemberId?: string | null
-): string {
-  const payer =
+): ExpenseRowMeta {
+  const paidByLabel =
     viewerMemberId && expense.paidByMemberId === viewerMemberId
       ? "You"
       : memberName(group, expense.paidByMemberId)
@@ -308,5 +313,19 @@ export function expenseRowMeta(
     viewerMemberId && id === viewerMemberId ? "you" : memberName(group, id)
   )
   const uniqueWith = [...new Set(withNames)]
-  return `Paid by ${payer} · With: ${uniqueWith.join(", ")}`
+  return { paidByLabel, sharedWith: uniqueWith.join(", ") }
+}
+
+/** Single-line meta (tests and exports). */
+export function expenseRowMeta(
+  group: Group,
+  expense: Expense,
+  viewerMemberId?: string | null
+): string {
+  const { paidByLabel, sharedWith } = expenseRowMetaParts(
+    group,
+    expense,
+    viewerMemberId
+  )
+  return `Paid by ${paidByLabel} · Shared by ${sharedWith}`
 }

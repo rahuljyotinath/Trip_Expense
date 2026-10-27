@@ -10,6 +10,16 @@ export type Profile = {
 
 export type PublicProfile = Omit<Profile, "passwordHash">
 
+/** Public card for someone else — no email or phone. */
+export type PublicProfileView = Pick<
+  PublicProfile,
+  "id" | "username" | "name" | "createdAt"
+>
+
+export type LinkedTripProfile = PublicProfileView & {
+  profileId: string
+}
+
 export type Member = {
   id: string
   name: string
@@ -156,6 +166,16 @@ export function publicProfile(profile: Profile): PublicProfile {
     name: normalized.name,
     email: normalized.email,
     phone: normalized.phone,
+    createdAt: normalized.createdAt,
+  }
+}
+
+export function publicProfileView(profile: Profile): PublicProfileView {
+  const normalized = normalizeProfile(profile)
+  return {
+    id: normalized.id,
+    username: normalized.username,
+    name: normalized.name,
     createdAt: normalized.createdAt,
   }
 }

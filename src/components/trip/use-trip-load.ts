@@ -14,7 +14,14 @@ import {
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
-import type { Group, JoinRequest, PublicProfile, TripInvite } from "@/lib/types"
+import type {
+  Group,
+  JoinRequest,
+  LinkedTripProfile,
+  PublicProfile,
+  TripInvite,
+} from "@/lib/types"
+import type { PendingJoinRequestRow } from "@/lib/client-api"
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
@@ -31,8 +38,11 @@ export function useTripLoad(groupId: string, tripPath: string) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [fromCache, setFromCache] = useState(false)
-  const [pendingJoinRequests, setPendingJoinRequests] = useState<JoinRequest[]>([])
+  const [pendingJoinRequests, setPendingJoinRequests] = useState<
+    PendingJoinRequestRow[]
+  >([])
   const [pendingTripInvites, setPendingTripInvites] = useState<TripInvite[]>([])
+  const [linkedProfiles, setLinkedProfiles] = useState<LinkedTripProfile[]>([])
 
   useEffect(() => {
     startOfflineOutboxSync()
@@ -79,6 +89,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
           setGroup(detail.group)
           setPendingJoinRequests(detail.pendingJoinRequests)
           setPendingTripInvites(detail.pendingTripInvites)
+          setLinkedProfiles(detail.linkedProfiles)
           setFromCache(false)
         } catch (err) {
           if (cancelled) return
@@ -110,6 +121,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
           setGroup(detail.group)
           setPendingJoinRequests(detail.pendingJoinRequests)
           setPendingTripInvites(detail.pendingTripInvites)
+          setLinkedProfiles(detail.linkedProfiles)
           setFromCache(false)
         })
         .catch(() => {
@@ -126,6 +138,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     setGroup(detail.group)
     setPendingJoinRequests(detail.pendingJoinRequests)
     setPendingTripInvites(detail.pendingTripInvites)
+    setLinkedProfiles(detail.linkedProfiles)
     setFromCache(false)
     return detail.group
   }
@@ -140,6 +153,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     fromCache,
     pendingJoinRequests,
     pendingTripInvites,
+    linkedProfiles,
     refreshGroup,
   }
 }

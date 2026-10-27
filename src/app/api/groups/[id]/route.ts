@@ -16,6 +16,7 @@ import {
   joinRequestForProfile,
   storeTripInvites,
 } from "@/lib/trip-invites"
+import { linkedProfilesForGroup } from "@/lib/linked-trip-profiles"
 import { canViewGroup } from "@/lib/trip-access"
 import {
   addExpense,
@@ -90,6 +91,9 @@ export async function GET(
             profileName:
               store.profiles.find((profile) => profile.id === item.profileId)?.name ??
               "Traveler",
+            profileUsername:
+              store.profiles.find((profile) => profile.id === item.profileId)
+                ?.username ?? null,
           }))
       : undefined
     const pendingTripInvites = admin
@@ -97,7 +101,13 @@ export async function GET(
           (item) => item.groupId === group.id && item.status === "pending"
         )
       : undefined
-    return json({ group, joinRequest, pendingJoinRequests, pendingTripInvites })
+    return json({
+      group,
+      joinRequest,
+      pendingJoinRequests,
+      pendingTripInvites,
+      linkedProfiles: linkedProfilesForGroup(store, group),
+    })
   } catch (error) {
     return fail(error)
   }
@@ -145,6 +155,7 @@ export async function PATCH(
       email?: string | null
       phone?: string | null
       code?: string
+      targetProfileId?: string | null
     }>(request)
 
     const result = await updateStore((store) => {
@@ -195,6 +206,7 @@ export async function PATCH(
           profileId: sessionId,
           email: body.email,
           phone: body.phone,
+          targetProfileId: body.targetProfileId,
         })
       }
       if (body.action === "revoke-trip-invite") {

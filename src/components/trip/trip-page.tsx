@@ -30,6 +30,7 @@ export function TripPage() {
     fromCache,
     pendingJoinRequests,
     pendingTripInvites,
+    linkedProfiles,
     refreshGroup,
   } = useTripLoad(groupId, tripPath)
 
@@ -129,6 +130,7 @@ export function TripPage() {
           fromCache={fromCache}
           pendingJoinRequests={pendingJoinRequests}
           pendingTripInvites={pendingTripInvites}
+          linkedProfiles={linkedProfiles}
         />
       </div>
     </Shell>
