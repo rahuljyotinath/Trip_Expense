@@ -14,7 +14,7 @@ Track **10–20** pilot trips (friends, one wedding, one corporate offsite). Use
 | Days active | 4 |
 | Group spends logged | 12 |
 | Reached Settle tab | yes |
-| UPI / Mark paid used | 2 payments |
+| Mark paid used | 2 payments |
 | WhatsApp invite sent | yes |
 | Blockers (1 line) | … |
 

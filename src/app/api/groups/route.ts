@@ -9,6 +9,10 @@ export async function GET(request: Request) {
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
+  const sessionId = await sessionProfileId()
+  if (!sessionId) {
+    return json({ error: "Sign in again." }, 401)
+  }
   const url = new URL(request.url)
   const profileId = url.searchParams.get("profileId")
   const code = url.searchParams.get("code")
@@ -21,6 +25,9 @@ export async function GET(request: Request) {
       return json({ group })
     }
     if (!profileId) return json({ error: "profileId or code required." }, 400)
+    if (profileId !== sessionId) {
+      return json({ error: "Forbidden." }, 403)
+    }
     return json({ groups: groupsForProfile(store, profileId) })
   } catch (error) {
     return fail(error)

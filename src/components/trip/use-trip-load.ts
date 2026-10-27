@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { profileNeedsSetup } from "@/lib/auth-ops"
 import {
   fetchGroup,
@@ -18,6 +18,9 @@ function errorText(error: unknown) {
 
 export function useTripLoad(groupId: string, tripPath: string) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const joinCode = (searchParams.get("join") ?? "").trim().toUpperCase() || null
+
   const [health, setHealth] = useState<Health | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [group, setGroup] = useState<Group | null>(null)
@@ -34,25 +37,32 @@ export function useTripLoad(groupId: string, tripPath: string) {
       setLoadError(null)
       setGroup(null)
       try {
-        const [nextHealth, session, nextGroup] = await Promise.all([
+        const [nextHealth, session] = await Promise.all([
           loadHealth(),
           fetchSessionProfile(),
-          fetchGroup(groupId, { skipHealth: true }),
         ])
         if (cancelled) return
         setHealth(nextHealth)
-        if (session?.id && session.username) {
-          if (profileNeedsSetup(session)) {
-            router.replace(
-              `/profile/setup?next=${encodeURIComponent(tripPath)}`
-            )
-            return
-          }
-          setProfile(session)
-          syncProfileToLocalStore(session)
-        } else {
-          setProfile(null)
+        if (!session?.id || !session.username) {
+          const next = joinCode
+            ? `${tripPath.split("/analytics")[0]}?join=${encodeURIComponent(joinCode)}`
+            : tripPath
+          router.replace(`/login?next=${encodeURIComponent(next)}`)
+          return
         }
+        if (profileNeedsSetup(session)) {
+          router.replace(
+            `/profile/setup?next=${encodeURIComponent(tripPath)}`
+          )
+          return
+        }
+        setProfile(session)
+        syncProfileToLocalStore(session)
+        const nextGroup = await fetchGroup(groupId, {
+          skipHealth: true,
+          joinCode,
+        })
+        if (cancelled) return
         setGroup(nextGroup)
       } catch (err) {
         if (!cancelled) setLoadError(errorText(err))
@@ -63,11 +73,11 @@ export function useTripLoad(groupId: string, tripPath: string) {
     return () => {
       cancelled = true
     }
-  }, [groupId, router, tripPath])
+  }, [groupId, joinCode, router, tripPath])
 
   async function refreshGroup() {
     if (!groupId) return null
-    const next = await fetchGroup(groupId)
+    const next = await fetchGroup(groupId, { joinCode })
     setGroup(next)
     return next
   }

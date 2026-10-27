@@ -55,13 +55,15 @@ test("export and parse round-trip trip csv", () => {
   const parsed = parseTripCsv(csv)
   assert.equal(parsed.trip.name, "Goa")
   assert.equal(parsed.members.length, 2)
-  assert.equal(parsed.members[1]?.coveredByMemberId, "m1")
+  const priya = parsed.members.find((m) => m.name === "Priya")
+  const aarav = parsed.members.find((m) => m.name === "Aarav")
+  assert.equal(aarav?.coveredByMemberId, priya?.id)
   assert.equal(parsed.expenses.length, 1)
   assert.equal(parsed.payments.length, 1)
   assert.equal(parsed.expenses[0]?.reason, "Lunch")
 })
 
 test("parse rejects bad member reference", () => {
-  const csv = exportTripCsv(sampleGroup()).replace("m1|m2", "m1|missing")
+  const csv = exportTripCsv(sampleGroup()).replace("Priya; Aarav", "Priya; Ghost")
   assert.throws(() => parseTripCsv(csv))
 })

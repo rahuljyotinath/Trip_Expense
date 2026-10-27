@@ -7,8 +7,8 @@ export function whatsappInviteMessage(tripName: string, inviteUrl: string) {
     name,
     inviteUrl,
     "",
-    "Link kholo → apna naam claim karo → spends add karo.",
-    "Settle UPI se; app bilkul free hai.",
+    "Sign in → link kholo → apna naam claim karo → spends add karo.",
+    "Private trip — sirf invite wale log. App bilkul free hai.",
   ].join("\n")
 }
 

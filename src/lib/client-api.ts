@@ -369,11 +369,19 @@ export async function fetchGroupByCode(code: string) {
   return data.group
 }
 
-async function requestGroupById(id: string, allowRetry: boolean): Promise<Group> {
+async function requestGroupById(
+  id: string,
+  allowRetry: boolean,
+  joinCode?: string | null
+): Promise<Group> {
+  const joinQuery =
+    joinCode && joinCode.trim()
+      ? `?join=${encodeURIComponent(joinCode.trim().toUpperCase())}`
+      : ""
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    const response = await fetch(`/api/groups/${id}`, {
+    const response = await fetch(`/api/groups/${id}${joinQuery}`, {
       credentials: "include",
       signal: controller.signal,
       headers: { "Content-Type": "application/json" },
@@ -388,7 +396,7 @@ async function requestGroupById(id: string, allowRetry: boolean): Promise<Group>
     }
     if (response.status === 404 && data.error === "Trip not found." && allowRetry) {
       await new Promise((resolve) => setTimeout(resolve, 200))
-      return requestGroupById(id, false)
+      return requestGroupById(id, false, joinCode)
     }
     if (!response.ok) {
       throw new Error(data.error || "Request failed.")
@@ -405,7 +413,10 @@ async function requestGroupById(id: string, allowRetry: boolean): Promise<Group>
   }
 }
 
-export async function fetchGroup(id: string, options?: { skipHealth?: boolean }) {
+export async function fetchGroup(
+  id: string,
+  options?: { skipHealth?: boolean; joinCode?: string | null }
+) {
   syncModeFromPersistedHealth()
   await ensureClientMode(options)
   if (mode === "unconfigured") {
@@ -413,7 +424,7 @@ export async function fetchGroup(id: string, options?: { skipHealth?: boolean })
     if (!group) throw new Error("Trip not found.")
     return group
   }
-  return requestGroupById(id, true)
+  return requestGroupById(id, true, options?.joinCode)
 }
 
 export async function openTrip(input: {

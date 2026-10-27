@@ -2,6 +2,11 @@
 
 Shared trip ledger: roster nicknames, spends, equal splits, and cash settlement between people on a trip.
 
+## Privacy
+
+- Trip details are **not public**. APIs require sign-in; full ledger access only for roster members, trip creator, or someone presenting the trip **join code** (invite) until they claim a seat.
+- Ledger data lives in **Postgres** in production — not in the git repo.
+
 ## Language
 
 **Cover**:

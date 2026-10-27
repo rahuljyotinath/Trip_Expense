@@ -62,7 +62,8 @@ export function SignupPage() {
         <CardHeader>
           <CardTitle className="font-heading text-3xl">Create account</CardTitle>
           <CardDescription>
-            Pick a username and password. You&apos;ll add your display name on the next step.
+            Account required before joining a trip. Next step: display name, email, and
+            phone.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

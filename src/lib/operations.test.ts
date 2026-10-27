@@ -272,7 +272,7 @@ test("setMemberCover clears cover", () => {
   )
 })
 
-test("addPayment rejects covered from or to seat", () => {
+test("addPayment allows paid-back between cover and covered seat", () => {
   const { store, profile } = baseStore()
   let s = store
   let group: Group
@@ -285,24 +285,14 @@ test("addPayment rejects covered from or to seat", () => {
     coveredByMemberId: opener.id,
     profileId: profile.id,
   }))
-  assert.throws(() =>
-    addPayment(s, {
-      groupId: group.id,
-      date: "2026-03-02",
-      amount: 10,
-      fromMemberId: friend.id,
-      toMemberId: opener.id,
-      createdByProfileId: profile.id,
-    })
-  )
-  assert.throws(() =>
-    addPayment(s, {
-      groupId: group.id,
-      date: "2026-03-02",
-      amount: 10,
-      fromMemberId: opener.id,
-      toMemberId: friend.id,
-      createdByProfileId: profile.id,
-    })
-  )
+  const paid = addPayment(s, {
+    groupId: group.id,
+    date: "2026-03-02",
+    amount: 10,
+    fromMemberId: friend.id,
+    toMemberId: opener.id,
+    createdByProfileId: profile.id,
+  })
+  assert.equal(paid.group.payments?.length, 1)
+  assert.equal(paid.group.payments?.[0]?.fromMemberId, friend.id)
 })

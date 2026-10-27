@@ -414,9 +414,6 @@ export function addPayment(
   if (!group.members.some((member) => member.id === input.toMemberId)) {
     throw new Error("Receiver is not on this trip.")
   }
-  rejectCoveredPaymentSeat(group, input.fromMemberId)
-  rejectCoveredPaymentSeat(group, input.toMemberId)
-
   const payment: Payment = {
     id: uid("pay"),
     date: input.date,
@@ -455,16 +452,6 @@ export function voidPayment(
     ),
   }
   return { store: replaceGroup(store, next), group: next }
-}
-
-function rejectCoveredPaymentSeat(group: Group, memberId: string) {
-  const member = group.members.find((item) => item.id === memberId)
-  if (!member?.coveredByMemberId) return
-  const cover = group.members.find((item) => item.id === member.coveredByMemberId)
-  const coverName = cover?.name ?? "their cover"
-  throw new Error(
-    `${member.name} is covered by ${coverName} — record the payment with ${coverName}.`
-  )
 }
 
 export function importTripCsv(

@@ -55,7 +55,10 @@ export function ProfileSetupPage() {
     }
   }, [join, returnPath, router])
 
-  const canSubmit = name.trim().length > 0
+  const canSubmit =
+    name.trim().length > 0 &&
+    email.trim().includes("@") &&
+    phone.trim().replace(/\D/g, "").length >= 10
 
   async function onSubmit() {
     if (!profile) return
@@ -102,7 +105,7 @@ export function ProfileSetupPage() {
         <CardHeader>
           <CardTitle className="font-heading text-3xl">Your profile</CardTitle>
           <CardDescription>
-            This is how you appear on trip rosters. Contact fields are optional.
+            Required to join trips. We may use email and phone for product updates.
             {profile ? (
               <>
                 {" "}
@@ -123,7 +126,7 @@ export function ProfileSetupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-email">Email (optional)</Label>
+            <Label htmlFor="profile-email">Email</Label>
             <Input
               id="profile-email"
               type="email"
@@ -134,7 +137,7 @@ export function ProfileSetupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-phone">Phone (optional)</Label>
+            <Label htmlFor="profile-phone">Phone</Label>
             <Input
               id="profile-phone"
               type="tel"

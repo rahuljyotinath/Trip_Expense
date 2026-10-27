@@ -10,6 +10,7 @@ import {
 import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
+import { canViewGroup } from "@/lib/trip-access"
 import {
   addExpense,
   addMember,
@@ -26,13 +27,18 @@ import {
 import type { SplitMode } from "@/lib/types"
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
+  const sessionId = await sessionProfileId()
+  if (!sessionId) {
+    return json({ error: "Sign in again." }, 401)
+  }
   const { id } = await params
+  const joinCode = new URL(request.url).searchParams.get("join")
   try {
     await connection()
     invalidateLoadCache()
@@ -55,6 +61,9 @@ export async function GET(
         `[groups GET] trip not found id=${id} mode=${mode} ledgerVersion=${postgres.version ?? "n/a"}`
       )
       return json({ error: "Trip not found." }, 404)
+    }
+    if (!canViewGroup(sessionId, group, { joinCode })) {
+      return json({ error: "You don't have access to this trip." }, 403)
     }
     return json({ group })
   } catch (error) {

@@ -35,7 +35,7 @@ test("updateProfile changes display and contact fields", () => {
     profileId: created.profile.id,
     name: "Lee Park",
     email: "lee@example.com",
-    phone: null,
+    phone: "+91 9876543210",
   })
   assert.equal(updated.profile.name, "Lee Park")
   assert.equal(updated.profile.email, "lee@example.com")
@@ -48,7 +48,27 @@ test("profileNeedsSetup when name matches username", () => {
 })
 
 test("profileNeedsSetup false when display name differs only by case", () => {
-  assert.equal(profileNeedsSetup({ username: "rahul", name: "Rahul" }), false)
+  assert.equal(
+    profileNeedsSetup({
+      username: "rahul",
+      name: "Rahul",
+      email: "r@example.com",
+      phone: "+919876543210",
+    }),
+    false
+  )
+})
+
+test("profileNeedsSetup when email or phone missing", () => {
+  assert.equal(
+    profileNeedsSetup({
+      username: "sam",
+      name: "Sam Lee",
+      email: null,
+      phone: "+919876543210",
+    }),
+    true
+  )
 })
 
 test("logIn rejects wrong password", () => {

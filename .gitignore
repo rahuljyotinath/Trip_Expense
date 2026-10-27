@@ -34,8 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local ledger (Postgres is production; backup snapshots live under data/backups/)
+# local ledger (Postgres is production; never commit real exports)
 /data/store.json
+/data/backups/*.json
 
 # vercel
 .vercel

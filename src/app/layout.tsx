@@ -21,7 +21,7 @@ const instrument = Instrument_Serif({
 export const metadata: Metadata = {
   title: "Trip Expenses Balancer",
   description:
-    "Open a trip, seat the people, log who paid. Settlements live in a JSON file on GitHub.",
+    "Sign in, join your trip, split bills privately with your group.",
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

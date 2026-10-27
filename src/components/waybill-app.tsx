@@ -44,8 +44,6 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { tripTabPanelClass, tripTabScrollClass } from "@/components/trip/trip-desk-layout"
-import { UpiSettleButton } from "@/components/trip/upi-settle-button"
-import { whatsappInviteMessage, whatsappShareUrl } from "@/lib/whatsapp-invite"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
@@ -202,14 +200,18 @@ export function WaybillApp() {
           return
         }
         if (joinFromUrl) {
+          if (!session?.id) {
+            router.replace(
+              `/login?join=${encodeURIComponent(joinFromUrl)}&next=${encodeURIComponent("/")}`
+            )
+            return
+          }
           try {
             const invited = await fetchGroupByCode(joinFromUrl)
-            router.replace(`/trip/${invited.id}`)
+            router.replace(
+              `/trip/${invited.id}?join=${encodeURIComponent(joinFromUrl)}`
+            )
           } catch {
-            if (!session?.id) {
-              router.replace(`/login?next=${encodeURIComponent("/")}`)
-              return
-            }
             setCode(joinFromUrl)
             setScreen("join")
           }
@@ -499,7 +501,7 @@ export function Shell({
                 Trip Expenses Balancer
               </h1>
               <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-                Free trip khata for India — WhatsApp pe link bhejo, bill split karo, UPI se settle.
+                Free trip khata for India — WhatsApp pe link bhejo, bill split karo, settle clear.
                 Friends ke liye hamesha free.
               </p>
             </>
@@ -578,7 +580,7 @@ function Home({
           names. Nobody floats unattached.
         </p>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground/90">
-          Goa, wedding, family yatra — trip khatam, hisaab clear. UPI settle; no app fee.
+          Goa, wedding, family yatra — trip khatam, hisaab clear. No app fee.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -1073,9 +1075,6 @@ export function TripDesk({
   }
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
-  const shareUrl =
-    typeof window === "undefined" ? "" : `${window.location.origin}${tripPath}`
-
   useEffect(() => {
     document.title = `${group.name} — Trip Expenses Balancer`
     return () => {
@@ -1099,28 +1098,10 @@ export function TripDesk({
     return () => window.removeEventListener("hashchange", scrollToLedgerHash)
   }, [group.id])
 
-  const loginHref = `/login?next=${encodeURIComponent(tripPath)}`
-  const signupHref = `/signup?next=${encodeURIComponent(tripPath)}`
-
   const analyticsPath = `${tripPath}/analytics`
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:gap-3">
-      {!profile ? (
-        <Alert className="shrink-0 py-2">
-          <Users />
-          <AlertTitle>Viewing as guest</AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Sign in to claim a seat and log spends.</span>
-            <Link href={loginHref} className="font-medium underline underline-offset-4">
-              Sign in
-            </Link>
-            <Link href={signupHref} className="font-medium underline underline-offset-4">
-              Create account
-            </Link>
-          </AlertDescription>
-        </Alert>
-      ) : null}
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -1149,34 +1130,24 @@ export function TripDesk({
             ) : null}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-1.5 lg:gap-2">
-          <Button
-            variant="outline"
-            onClick={async () => {
-              if (typeof navigator !== "undefined" && navigator.share && shareUrl) {
-                try {
-                  await navigator.share({ title: group.name, url: shareUrl })
-                  return
-                } catch {
-                  /* cancelled or unsupported */
-                }
-              }
-              onCopy(shareUrl)
-            }}
-          >
-            {copied ? <Check /> : <Link2 />}
-            {copied ? "Link copied" : "Copy invite link"}
-          </Button>
-          {shareUrl ? (
-            <a
-              href={whatsappShareUrl(whatsappInviteMessage(group.name, shareUrl))}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium shadow-sm hover:bg-muted"
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:gap-2">
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-1.5">
+            <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+              Join code
+            </span>
+            <span className="font-mono text-sm font-semibold tracking-widest tabular-nums">
+              {group.code}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => onCopy(group.code)}
             >
-              WhatsApp invite
-            </a>
-          ) : null}
+              {copied ? <Check /> : <Link2 />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
           {profile && isOpener ? (
             <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
               <Download /> Export CSV
@@ -1281,15 +1252,6 @@ export function TripDesk({
                       {formatMoney(transfer.amount, group.currency)}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
-                      {seat?.id === transfer.fromMemberId ? (
-                        <UpiSettleButton
-                          payeeMemberId={transfer.toMemberId}
-                          payeeName={memberName(group, transfer.toMemberId)}
-                          amount={transfer.amount}
-                          currency={group.currency}
-                          note={`${group.name} settle`}
-                        />
-                      ) : null}
                       {canWrite && profile ? (
                         <Button
                           size="sm"
@@ -1496,18 +1458,8 @@ export function TripDesk({
                                   {memberName(group, payment.toMemberId)}
                                 </p>
                               </CardContent>
-                              {seat?.id === payment.fromMemberId || canEditPayment ? (
+                              {canEditPayment ? (
                                 <CardFooter className="mt-auto flex-wrap gap-1 border-0 bg-transparent px-3 pb-3 pt-0">
-                                  {seat?.id === payment.fromMemberId ? (
-                                    <UpiSettleButton
-                                      payeeMemberId={payment.toMemberId}
-                                      payeeName={memberName(group, payment.toMemberId)}
-                                      amount={payment.amount}
-                                      currency={group.currency}
-                                      note={`${group.name} paid back`}
-                                      size="xs"
-                                    />
-                                  ) : null}
                                   {canEditPayment ? (
                                     <Button
                                       variant="ghost"
@@ -1781,7 +1733,7 @@ export function TripDesk({
             <DialogTitle>Import trip CSV?</DialogTitle>
             <DialogDescription>
               This replaces everyone on the roster, every spend, and every paid-back
-              entry on this trip. Trip code and invite link stay the same.
+              entry on this trip. Join code stays the same.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

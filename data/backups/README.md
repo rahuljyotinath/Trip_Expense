@@ -1,7 +1,7 @@
-# Ledger backups
+# Ledger backups (local only)
 
-Final GitHub file-ledger snapshot before Postgres-only storage (2026-10-27):
+Do **not** commit real ledger JSON to git. Use this folder for one-off exports on your machine.
 
-- `github-store-20261027.json` — downloaded from `data/store.json` on `main` via GitHub API.
+Restore to local dev: copy a backup to `data/store.json`. Import to Postgres:
 
-Restore to local dev: copy to `data/store.json`. Import to Postgres: `POSTGRES_URL=... npm run db:import`.
+`POSTGRES_URL=... npx tsx scripts/import-ledger-to-postgres.ts path/to/your-export.json`
