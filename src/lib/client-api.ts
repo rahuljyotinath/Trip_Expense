@@ -25,6 +25,14 @@ import {
   voidExpense,
   voidPayment,
 } from "@/lib/operations"
+import { nowIso } from "@/lib/ids"
+import {
+  browserOutbox,
+  isNetworkError,
+  isRetryableSyncError,
+  withClientPatchIds,
+  type OutboxOp,
+} from "@/lib/offline-outbox"
 import {
   ensureProfileForPatch,
   preparePatchStore,
@@ -32,6 +40,10 @@ import {
   storeWithTrip,
   upsertProfileInStore,
 } from "@/lib/store-session"
+
+export { isNetworkError, isRetryableSyncError } from "@/lib/offline-outbox"
+
+const JOIN_CREATE_OFFLINE = "Connect to the internet to join or create a trip."
 
 const PROFILE_KEY = "waybill.profile"
 const LOCAL_STORE_KEY = "waybill.store"
@@ -113,6 +125,43 @@ function writeLocalStore(store: Store) {
   window.localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(store))
 }
 
+export function cachedGroupById(id: string): Group | null {
+  if (typeof window === "undefined" || !id.trim()) return null
+  return readLocalStore().groups.find((item) => item.id === id) ?? null
+}
+
+export function persistGroupSnapshot(group: Group) {
+  if (typeof window === "undefined") return
+  try {
+    writeLocalStore(storeWithTrip(readLocalStore(), group))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function applyPendingOutbox(group: Group): Group {
+  let next = group
+  for (const op of browserOutbox().list().filter((item) => item.groupId === group.id)) {
+    try {
+      next = previewGroupPatch(next, op.body)
+    } catch {
+      /* skip a body that no longer applies */
+    }
+  }
+  return next
+}
+
+function requireNetworkForInvite() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    throw new Error(JOIN_CREATE_OFFLINE)
+  }
+}
+
+function inviteNetworkError(error: unknown): never {
+  if (isNetworkError(error)) throw new Error(JOIN_CREATE_OFFLINE)
+  throw error
+}
+
 const REQUEST_TIMEOUT_MS = 25_000
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -184,7 +233,8 @@ export async function fetchSessionProfile() {
     const data = await request<{ profile: PublicProfile | null }>("/api/auth/session")
     if (data.profile) saveProfile(data.profile)
     return data.profile
-  } catch {
+  } catch (error) {
+    if (isNetworkError(error)) return loadSavedProfile()
     return null
   }
 }
@@ -254,6 +304,7 @@ export async function logoutUser() {
   clearSavedProfile()
   if (typeof window !== "undefined") {
     writeLocalStore(emptyStore())
+    browserOutbox().clear()
   }
   if (mode !== "unconfigured") {
     try {
@@ -299,6 +350,7 @@ async function requestHealthFromServer(allowRetry: boolean): Promise<Health> {
     const health = { ...data, notice: null }
     healthCache = { health, at: Date.now() }
     persistHealthSnapshot(health)
+    void drainGroupOutbox()
     return health
   } catch (error) {
     if (allowRetry) {
@@ -360,13 +412,18 @@ export async function fetchMyGroups(profileId: string) {
 }
 
 export async function fetchGroupByCode(code: string) {
+  requireNetworkForInvite()
   if (mode === "unconfigured") {
     const group = groupByCode(readLocalStore(), code)
     if (!group) throw new Error("No trip uses that code.")
     return group
   }
-  const data = await request<{ group: Group }>(`/api/groups?code=${encodeURIComponent(code)}`)
-  return data.group
+  try {
+    const data = await request<{ group: Group }>(`/api/groups?code=${encodeURIComponent(code)}`)
+    return data.group
+  } catch (error) {
+    inviteNetworkError(error)
+  }
 }
 
 async function requestGroupById(
@@ -424,7 +481,10 @@ export async function fetchGroup(
     if (!group) throw new Error("Trip not found.")
     return group
   }
-  return requestGroupById(id, true, options?.joinCode)
+  const group = await requestGroupById(id, true, options?.joinCode)
+  const merged = applyPendingOutbox(group)
+  persistGroupSnapshot(merged)
+  return merged
 }
 
 export async function openTrip(input: {
@@ -435,16 +495,22 @@ export async function openTrip(input: {
   startDate?: string | null
   endDate?: string | null
 }) {
+  requireNetworkForInvite()
   if (mode === "unconfigured") {
     const result = createGroup(readLocalStore(), input)
     writeLocalStore(result.store)
     return result.group
   }
-  const data = await request<{ group: Group }>("/api/groups", {
-    method: "POST",
-    body: JSON.stringify(input),
-  })
-  return data.group
+  try {
+    const data = await request<{ group: Group }>("/api/groups", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+    persistGroupSnapshot(data.group)
+    return data.group
+  } catch (error) {
+    inviteNetworkError(error)
+  }
 }
 
 type GroupPatchResult = { store: Store; group: Group }
@@ -502,6 +568,7 @@ function runGroupPatchMutator(
       split: body.split as SplitMode | undefined,
       shares: (body.shares as Record<string, number>) ?? {},
       createdByProfileId: profileId,
+      expenseId: String(body.expenseId ?? ""),
     })
   }
   if (action === "delete-expense") {
@@ -541,6 +608,7 @@ function runGroupPatchMutator(
       fromMemberId: String(body.fromMemberId ?? ""),
       toMemberId: String(body.toMemberId ?? ""),
       createdByProfileId: profileId,
+      paymentId: String(body.paymentId ?? ""),
     })
   }
   if (action === "void-payment") {
@@ -590,7 +658,69 @@ export function previewGroupPatch(
   return result.group
 }
 
-/** Update UI immediately, persist in the background, reconcile or rollback on failure. */
+function usesDurableOutbox() {
+  return typeof window !== "undefined" && mode !== "unconfigured"
+}
+
+type DrainResultLike = {
+  sent: number
+  remaining: number
+  paused: boolean
+  dropped: number
+  droppedError?: unknown
+}
+
+let drainInFlight: Promise<DrainResultLike> | null = null
+
+export function outboxPendingCount(groupId?: string) {
+  return browserOutbox().pendingCount(groupId)
+}
+
+export function subscribeOutbox(listener: () => void) {
+  return browserOutbox().subscribe(listener)
+}
+
+async function patchGroupNetwork(id: string, body: Record<string, unknown>) {
+  const data = await request<{ group: Group }>(`/api/groups/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+  return data.group
+}
+
+export async function drainGroupOutbox(): Promise<DrainResultLike> {
+  if (drainInFlight) return drainInFlight
+  const run = (async () => {
+    return browserOutbox().drain({
+      isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
+      isRetryable: isRetryableSyncError,
+      send: async (op: OutboxOp) => patchGroupNetwork(op.groupId, op.body),
+      onSent: (_op, result) => {
+        if (!result || typeof result !== "object" || !("id" in result)) return
+        persistGroupSnapshot(applyPendingOutbox(result as Group))
+      },
+    })
+  })()
+  drainInFlight = run
+  try {
+    return await run
+  } finally {
+    drainInFlight = null
+  }
+}
+
+let outboxSyncStarted = false
+
+export function startOfflineOutboxSync() {
+  if (typeof window === "undefined" || outboxSyncStarted) return
+  outboxSyncStarted = true
+  window.addEventListener("online", () => {
+    void drainGroupOutbox()
+  })
+  if (navigator.onLine) void drainGroupOutbox()
+}
+
+/** Update UI immediately, persist locally, enqueue outbox, then PATCH when online. */
 export function commitGroupPatch(
   group: Group,
   body: Record<string, unknown>,
@@ -602,18 +732,76 @@ export function commitGroupPatch(
   },
   actor?: PublicProfile | null
 ): void {
+  const stamped = withClientPatchIds(body)
   let preview: Group
   try {
-    preview = previewGroupPatch(group, body, actor)
+    preview = previewGroupPatch(group, stamped, actor)
   } catch (error) {
     handlers.onError(error instanceof Error ? error.message : "Update failed.")
     return
   }
+  persistGroupSnapshot(preview)
   handlers.onApplied(preview)
+
+  if (usesDurableOutbox()) {
+    const opId = String(stamped.clientOpId ?? "")
+    browserOutbox().enqueue({
+      opId,
+      groupId: group.id,
+      body: stamped,
+      createdAt: nowIso(),
+    })
+    void (async () => {
+      try {
+        let drained = await drainGroupOutbox()
+        if (!drained.paused && browserOutbox().list().some((item) => item.opId === opId)) {
+          drained = await drainGroupOutbox()
+        }
+        const stillQueued = browserOutbox()
+          .list()
+          .some((item) => item.opId === opId)
+        if (stillQueued) {
+          handlers.onError("Saved on this phone. Will sync when you're back online.")
+          return
+        }
+        if (drained.dropped > 0) {
+          const raw =
+            drained.droppedError instanceof Error
+              ? drained.droppedError.message
+              : "Could not save."
+          handlers.onError(raw.startsWith("Could not save") ? raw : `Could not save: ${raw}`)
+          if (handlers.fetchLatest) {
+            try {
+              handlers.onReconciled?.(await handlers.fetchLatest())
+            } catch {
+              /* keep last applied state */
+            }
+          }
+          return
+        }
+        handlers.onReconciled?.(cachedGroupById(group.id) ?? preview)
+      } catch (error) {
+        if (isRetryableSyncError(error)) {
+          handlers.onError("Saved on this phone. Will sync when you're back online.")
+          return
+        }
+        const raw = error instanceof Error ? error.message : "Could not save."
+        handlers.onError(raw.startsWith("Could not save") ? raw : `Could not save: ${raw}`)
+        if (handlers.fetchLatest) {
+          try {
+            handlers.onReconciled?.(await handlers.fetchLatest())
+          } catch {
+            /* keep last applied state */
+          }
+        }
+      }
+    })()
+    return
+  }
 
   void (async () => {
     try {
-      const server = await patchGroup(group.id, body, group)
+      const server = await patchGroup(group.id, stamped, preview)
       handlers.onReconciled?.(server)
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Could not save."
@@ -660,8 +848,9 @@ async function patchGroup(id: string, body: Record<string, unknown>, groupHint?:
     method: "PATCH",
     body: JSON.stringify(body),
   })
-  writeLocalStore(storeWithTrip(readLocalStore(), data.group))
-  return data.group
+  const merged = applyPendingOutbox(data.group)
+  writeLocalStore(storeWithTrip(readLocalStore(), merged))
+  return merged
 }
 
 export function claimSeat(groupId: string, memberId: string, profileId: string) {

@@ -1,3 +1,5 @@
+import { fromPaise, toPaise } from "./money"
+import { expenseShareCutsPaise } from "./settle"
 import type { Expense, Group, Payment } from "./types"
 
 export function compareLedgerExpenses(a: Expense, b: Expense) {
@@ -86,13 +88,13 @@ export function ledgerDaysForViewer(
   viewerMemberId: string | null
 ): LedgerDayForViewer[] {
   const expenseDays = expensesByDay(ledgerGroupExpenses(group))
-  const viewerPayments = ledgerPersonalPaymentsForViewer(group, viewerMemberId)
+  const tripPayments = ledgerPersonalPayments(group)
 
   const byDate = new Map<string, { expenses: Expense[]; payments: Payment[] }>()
   for (const day of expenseDays) {
     byDate.set(day.date, { expenses: day.expenses, payments: [] })
   }
-  for (const payment of viewerPayments) {
+  for (const payment of tripPayments) {
     const bucket = byDate.get(payment.date) ?? { expenses: [], payments: [] }
     bucket.payments.push(payment)
     byDate.set(payment.date, bucket)
@@ -193,4 +195,65 @@ export function personalExpenditureForMember(group: Group, memberId: string): nu
   return ledgerPersonalExpenses(group)
     .filter((expense) => expense.paidByMemberId === memberId)
     .reduce((sum, expense) => sum + expense.amount, 0)
+}
+
+export type ViewerSecondAmount =
+  | { kind: "lent"; amount: number }
+  | { kind: "owe"; amount: number }
+  | { kind: "none" }
+
+/** Viewer-relative second amount for a group ledger row. Reuses expenseShareCutsPaise. */
+export function expenseViewerSecondAmount(
+  expense: Expense,
+  viewerMemberId: string | null,
+  memberIds: Iterable<string>
+): ViewerSecondAmount {
+  if (!viewerMemberId) return { kind: "none" }
+  const cuts = expenseShareCutsPaise(expense, memberIds)
+  if (!cuts) return { kind: "none" }
+  const sharePaise = cuts.get(viewerMemberId) ?? 0
+  const viewerPaid = expense.paidByMemberId === viewerMemberId
+  if (viewerPaid) {
+    const lentPaise = toPaise(expense.amount) - sharePaise
+    if (lentPaise <= 0) return { kind: "none" }
+    return { kind: "lent", amount: fromPaise(lentPaise) }
+  }
+  if (expense.participantIds.includes(viewerMemberId)) {
+    if (sharePaise <= 0) return { kind: "none" }
+    return { kind: "owe", amount: fromPaise(sharePaise) }
+  }
+  return { kind: "none" }
+}
+
+export type PaidBackViewerTone = "received" | "paid-back" | "none"
+
+export function paymentViewerTone(
+  payment: Payment,
+  viewerMemberId: string | null
+): PaidBackViewerTone {
+  if (!viewerMemberId) return "none"
+  if (payment.toMemberId === viewerMemberId) return "received"
+  if (payment.fromMemberId === viewerMemberId) return "paid-back"
+  return "none"
+}
+
+export type LedgerDayItem =
+  | { kind: "expense"; createdAt: string; expense: Expense }
+  | { kind: "payment"; createdAt: string; payment: Payment }
+
+export function ledgerDayItems(day: LedgerDayForViewer): LedgerDayItem[] {
+  const items: LedgerDayItem[] = [
+    ...day.expenses.map((expense) => ({
+      kind: "expense" as const,
+      createdAt: expense.createdAt,
+      expense,
+    })),
+    ...day.payments.map((payment) => ({
+      kind: "payment" as const,
+      createdAt: payment.createdAt,
+      payment,
+    })),
+  ]
+  items.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return items
 }

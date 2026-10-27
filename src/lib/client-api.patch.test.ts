@@ -66,6 +66,27 @@ test("previewGroupPatch add-expense uses actor when profileId is blank", () => {
   assert.equal(next.expenses.length, 2)
 })
 
+test("previewGroupPatch add-expense keeps client expenseId", () => {
+  const group = seatedGroup()
+  const next = previewGroupPatch(
+    group,
+    {
+      action: "add-expense",
+      expenseId: "e_offline_1",
+      date: "2026-03-02",
+      amount: 50,
+      reason: "Snack",
+      paidByMemberId: "m1",
+      participantIds: ["m1", "m2"],
+      split: "equal",
+      shares: {},
+      profileId: "p1",
+    },
+    pub
+  )
+  assert.equal(next.expenses.some((item) => item.id === "e_offline_1"), true)
+})
+
 test("previewGroupPatch update-expense uses actor when profileId is blank", () => {
   const group = seatedGroup()
   const next = previewGroupPatch(

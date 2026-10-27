@@ -20,7 +20,7 @@ export function TripPage() {
   const groupId = Array.isArray(rawId) ? rawId[0] ?? "" : String(rawId ?? "")
   const tripPath = groupId ? `/trip/${groupId}` : "/"
 
-  const { health, profile, group, setGroup, loadError, loading, refreshGroup } =
+  const { health, profile, group, setGroup, loadError, loading, fromCache, refreshGroup } =
     useTripLoad(groupId, tripPath)
 
   const [deskError, setDeskError] = useState<string | null>(null)
@@ -88,34 +88,37 @@ export function TripPage() {
       onHome={() => router.push("/")}
       onLogout={profile ? () => void onLogout() : undefined}
     >
-      {deskError ? (
-        <Alert variant="destructive" className="mb-4 shrink-0">
-          <AlertCircle />
-          <AlertTitle>Hold on</AlertTitle>
-          <AlertDescription>{deskError}</AlertDescription>
-        </Alert>
-      ) : null}
-      <TripDesk
-        profile={profile}
-        group={group}
-        tripPath={tripPath}
-        busy={busy}
-        copied={copied}
-        expenseOpen={expenseOpen}
-        memberOpen={memberOpen}
-        paymentOpen={paymentOpen}
-        onExpenseOpen={setExpenseOpen}
-        onMemberOpen={setMemberOpen}
-        onPaymentOpen={setPaymentOpen}
-        onCopy={copyInvite}
-        onRefresh={async () => {
-          await refreshGroup()
-        }}
-        onGroup={setGroup}
-        onError={setDeskError}
-        onBusy={setBusy}
-        onClaim={profile ? onClaim : undefined}
-      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {deskError ? (
+          <Alert variant="destructive" className="mb-4 shrink-0">
+            <AlertCircle />
+            <AlertTitle>Hold on</AlertTitle>
+            <AlertDescription>{deskError}</AlertDescription>
+          </Alert>
+        ) : null}
+        <TripDesk
+          profile={profile}
+          group={group}
+          tripPath={tripPath}
+          busy={busy}
+          copied={copied}
+          expenseOpen={expenseOpen}
+          memberOpen={memberOpen}
+          paymentOpen={paymentOpen}
+          onExpenseOpen={setExpenseOpen}
+          onMemberOpen={setMemberOpen}
+          onPaymentOpen={setPaymentOpen}
+          onCopy={copyInvite}
+          onRefresh={async () => {
+            await refreshGroup()
+          }}
+          onGroup={setGroup}
+          onError={setDeskError}
+          onBusy={setBusy}
+          onClaim={profile ? onClaim : undefined}
+          fromCache={fromCache}
+        />
+      </div>
     </Shell>
   )
 }

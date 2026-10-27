@@ -26,7 +26,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -43,11 +42,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { tripTabPanelClass, tripTabScrollClass } from "@/components/trip/trip-desk-layout"
+import { tripDeskScrollClass, tripTabPanelClass } from "@/components/trip/trip-desk-layout"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
   commitGroupPatch,
+  drainGroupOutbox,
   fetchGroup,
   fetchGroupByCode,
   fetchMyGroups,
@@ -55,15 +55,20 @@ import {
   logoutUser,
   fetchSessionProfile,
   openTrip,
+  outboxPendingCount,
+  subscribeOutbox,
   clearSavedProfile,
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
 import {
+  expenseViewerSecondAmount,
   groupPaidByMember,
+  ledgerDayItems,
   ledgerDaysForViewer,
   ledgerPersonalExpensesForViewer,
   paidBackReceivedForMember,
+  paymentViewerTone,
   personalExpenditureForMember,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
@@ -152,6 +157,7 @@ function applyGroupPatchOptimistic(input: {
     },
     onReconciled: (next) => {
       onGroup(next)
+      onError(null)
     },
     fetchLatest: () => fetchGroup(group.id),
   }, profile)
@@ -993,6 +999,61 @@ function TripSummaryStrip({
   )
 }
 
+function TripSyncBanner({
+  groupId,
+  fromCache,
+}: {
+  groupId: string
+  fromCache: boolean
+}) {
+  const [pending, setPending] = useState(() => outboxPendingCount(groupId))
+  const [online, setOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine
+  )
+  const [syncing, setSyncing] = useState(false)
+
+  useEffect(() => {
+    setPending(outboxPendingCount(groupId))
+    const unsub = subscribeOutbox(() => setPending(outboxPendingCount(groupId)))
+    function onOnline() {
+      setOnline(true)
+      setSyncing(true)
+      void drainGroupOutbox().finally(() => setSyncing(false))
+    }
+    function onOffline() {
+      setOnline(false)
+      setSyncing(false)
+    }
+    window.addEventListener("online", onOnline)
+    window.addEventListener("offline", onOffline)
+    return () => {
+      unsub()
+      window.removeEventListener("online", onOnline)
+      window.removeEventListener("offline", onOffline)
+    }
+  }, [groupId])
+
+  if (syncing) {
+    return <p className="mt-1 text-xs text-muted-foreground">Syncing…</p>
+  }
+  if (!online || fromCache) {
+    const waiting = pending > 0 ? ` ${pending} waiting to sync.` : ""
+    return (
+      <p className="mt-1 text-xs text-muted-foreground">
+        Saved on this phone.{waiting} Will sync when you're back online.
+      </p>
+    )
+  }
+  if (pending > 0) {
+    return (
+      <p className="mt-1 text-xs text-muted-foreground">
+        {pending} waiting to sync
+      </p>
+    )
+  }
+  return null
+}
+
 export function TripDesk({
   profile,
   group,
@@ -1011,6 +1072,7 @@ export function TripDesk({
   onError,
   onBusy,
   onClaim,
+  fromCache = false,
 }: {
   profile: PublicProfile | null
   group: Group
@@ -1029,6 +1091,7 @@ export function TripDesk({
   onError: (message: string | null) => void
   onBusy: (value: boolean) => void
   onClaim?: (memberId: string) => void
+  fromCache?: boolean
 }) {
   const seat = profile ? mySeat(group, profile.id) : null
   const isOpener = profile ? group.createdByProfileId === profile.id : false
@@ -1044,6 +1107,8 @@ export function TripDesk({
     () => ledgerDaysForViewer(group, seat?.id ?? null),
     [group, seat?.id]
   )
+  const memberIds = useMemo(() => group.members.map((member) => member.id), [group.members])
+  const viewerMemberId = seat?.id ?? null
   const tripDates = formatTripDates(group)
   const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -1101,8 +1166,9 @@ export function TripDesk({
   const analyticsPath = `${tripPath}/analytics`
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden lg:gap-3">
-      <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className={`flex flex-col gap-3 lg:gap-3 ${tripDeskScrollClass}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <h2 className="font-heading text-2xl tracking-tight sm:text-3xl lg:text-2xl">
@@ -1129,6 +1195,7 @@ export function TripDesk({
               </>
             ) : null}
           </p>
+          <TripSyncBanner groupId={group.id} fromCache={fromCache} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:gap-2">
           <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-1.5">
@@ -1201,11 +1268,9 @@ export function TripDesk({
         </div>
       </div>
 
-      <div className="shrink-0">
-        <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
-      </div>
+      <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
 
-      <Tabs defaultValue="ledger" className="flex min-h-0 flex-1 flex-col">
+      <Tabs defaultValue="ledger" className="flex flex-col gap-2">
         <TabsList className="h-auto shrink-0 flex-wrap gap-1 p-[3px]">
           <TabsTrigger value="settle">Settle</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
@@ -1218,7 +1283,7 @@ export function TripDesk({
           </Link>
         </TabsList>
         <TabsContent value="settle" className={tripTabPanelClass}>
-          <div className={`space-y-2 ${tripTabScrollClass}`}>
+          <div className="space-y-2">
           {transfers.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1379,7 +1444,7 @@ export function TripDesk({
               </Button>
             </div>
           ) : null}
-          <div className={`space-y-4 ${tripTabScrollClass}`}>
+          <div className="space-y-4">
           {ledgerDays.length === 0 ? (
             <Card>
               <CardHeader>
@@ -1434,114 +1499,144 @@ export function TripDesk({
                       </p>
                     </div>
                     {!collapsed ? (
-                      <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {day.payments.map((payment) => {
-                          const canEditPayment =
-                            profile &&
-                            (payment.createdByProfileId === profile.id ||
-                              group.createdByProfileId === profile.id)
-                          return (
-                            <Card
-                              key={payment.id}
-                              size="sm"
-                              className="flex flex-col pb-3 motion-safe:active:scale-[0.99] has-data-[slot=card-footer]:pb-0"
-                            >
-                              <CardContent className="flex flex-1 flex-col gap-2 py-3">
-                                <p className="font-heading text-lg leading-none tabular-nums">
-                                  {formatMoney(payment.amount, group.currency)}
-                                </p>
-                                <Badge variant="secondary" className="w-fit text-xs">
-                                  Paid back
-                                </Badge>
-                                <p className="font-medium leading-snug">
+                      <div className="divide-y divide-border/60">
+                        {ledgerDayItems(day).map((item) => {
+                          if (item.kind === "payment") {
+                            const payment = item.payment
+                            const canEditPayment =
+                              profile &&
+                              (payment.createdByProfileId === profile.id ||
+                                group.createdByProfileId === profile.id)
+                            const tone = paymentViewerTone(payment, viewerMemberId)
+                            return (
+                              <div
+                                key={payment.id}
+                                className="flex min-h-9 items-center gap-2 px-3 py-1.5"
+                              >
+                                <p className="min-w-0 flex-1 truncate text-sm font-medium">
                                   {memberName(group, payment.fromMemberId)} →{" "}
                                   {memberName(group, payment.toMemberId)}
                                 </p>
-                              </CardContent>
-                              {canEditPayment ? (
-                                <CardFooter className="mt-auto flex-wrap gap-1 border-0 bg-transparent px-3 pb-3 pt-0">
-                                  {canEditPayment ? (
-                                    <Button
-                                      variant="ghost"
-                                      size="xs"
-                                      disabled={busy}
-                                      onClick={() => {
-                                        applyGroupPatchOptimistic({
-                                          group,
-                                          profile,
-                                          body: {
-                                            action: "void-payment",
-                                            paymentId: payment.id,
-                                            profileId: profile.id,
-                                            restore: false,
-                                          },
-                                          onGroup,
-                                          onError,
-                                          onBusy,
-                                          refresh: onRefresh,
-                                        })
-                                      }}
-                                    >
-                                      Cross out
-                                    </Button>
-                                  ) : null}
-                                </CardFooter>
-                              ) : null}
-                            </Card>
-                          )
-                        })}
-                        {day.expenses.map((expense) => {
+                                <p className="shrink-0 text-sm tabular-nums">
+                                  {formatMoney(payment.amount, group.currency)}
+                                </p>
+                                {viewerMemberId ? (
+                                  <p
+                                    className={`w-[6.75rem] shrink-0 truncate text-right text-[11px] ${
+                                      tone === "received"
+                                        ? "text-moss"
+                                        : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    {tone === "received"
+                                      ? "You received"
+                                      : tone === "paid-back"
+                                        ? "You paid back"
+                                        : "—"}
+                                  </p>
+                                ) : null}
+                                {canEditPayment ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    disabled={busy}
+                                    className="shrink-0"
+                                    onClick={() => {
+                                      applyGroupPatchOptimistic({
+                                        group,
+                                        profile,
+                                        body: {
+                                          action: "void-payment",
+                                          paymentId: payment.id,
+                                          profileId: profile.id,
+                                          restore: false,
+                                        },
+                                        onGroup,
+                                        onError,
+                                        onBusy,
+                                        refresh: onRefresh,
+                                      })
+                                    }}
+                                  >
+                                    Cross out
+                                  </Button>
+                                ) : null}
+                              </div>
+                            )
+                          }
+                          const expense = item.expense
                           const canEdit =
                             profile &&
                             (expense.createdByProfileId === profile.id ||
                               group.createdByProfileId === profile.id)
-                          const splitLabel = expense.participantIds
-                            .map((id) => memberName(group, id))
-                            .join(", ")
+                          const viewerPaid =
+                            Boolean(viewerMemberId) &&
+                            expense.paidByMemberId === viewerMemberId
+                          const paidLabel = viewerPaid
+                            ? "You paid"
+                            : `${memberName(group, expense.paidByMemberId)} paid`
+                          const second = expenseViewerSecondAmount(
+                            expense,
+                            viewerMemberId,
+                            memberIds
+                          )
                           return (
-                            <Card
+                            <div
                               key={expense.id}
-                              size="sm"
-                              className="flex flex-col pb-3 motion-safe:active:scale-[0.99] has-data-[slot=card-footer]:pb-0"
+                              className="flex min-h-9 items-center gap-2 px-3 py-1.5"
                             >
-                              <CardContent className="flex flex-1 flex-col gap-2 py-3">
-                                <p className="font-heading text-lg leading-none tabular-nums">
-                                  {formatMoney(expense.amount, group.currency)}
+                              <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                                {expense.reason}
+                              </p>
+                              <p className="shrink-0 text-right text-sm tabular-nums">
+                                {formatMoney(expense.amount, group.currency)}
+                                <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                                  {paidLabel}
+                                </span>
+                              </p>
+                              {viewerMemberId ? (
+                                <p
+                                  className={`w-[6.75rem] shrink-0 truncate text-right text-[11px] tabular-nums ${
+                                    second.kind === "lent"
+                                      ? "text-moss"
+                                      : second.kind === "owe"
+                                        ? "text-stamp"
+                                        : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {second.kind === "lent"
+                                    ? `You lent ${formatMoney(second.amount, group.currency)}`
+                                    : second.kind === "owe"
+                                      ? `You owe ${formatMoney(second.amount, group.currency)}`
+                                      : "—"}
                                 </p>
-                                <Badge variant="secondary" className="w-fit text-xs">
-                                  Paid by {memberName(group, expense.paidByMemberId)}
-                                </Badge>
-                                <p className="font-medium leading-snug">{expense.reason}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Split: {splitLabel}
-                                </p>
-                              </CardContent>
-                              {canEdit ? (
-                                <CardFooter className="mt-auto gap-0.5 border-0 bg-transparent px-3 pb-3 pt-0">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    disabled={busy}
-                                    aria-label="Edit spend"
-                                    onClick={() => {
-                                      setEditingExpense(expense)
-                                      onExpenseOpen(true)
-                                    }}
-                                  >
-                                    <Pencil />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    disabled={busy}
-                                    aria-label="Delete spend"
-                                    onClick={() => setDeleteExpenseTarget(expense)}
-                                  >
-                                    <Trash2 />
-                                  </Button>
-                                </CardFooter>
                               ) : null}
-                            </Card>
+                                {canEdit ? (
+                                  <span className="flex shrink-0 gap-0.5">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      disabled={busy}
+                                      aria-label="Edit spend"
+                                      onClick={() => {
+                                        setEditingExpense(expense)
+                                        onExpenseOpen(true)
+                                      }}
+                                    >
+                                      <Pencil />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-xs"
+                                      disabled={busy}
+                                      aria-label="Delete spend"
+                                      onClick={() => setDeleteExpenseTarget(expense)}
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  </span>
+                                ) : null}
+                            </div>
                           )
                         })}
                       </div>
@@ -1586,7 +1681,7 @@ export function TripDesk({
           </div>
         </TabsContent>
         <TabsContent value="people" className={tripTabPanelClass}>
-          <div className={`space-y-2 ${tripTabScrollClass}`}>
+          <div className="space-y-2">
           {group.members.map((member) => {
             const cover = member.coveredByMemberId
               ? group.members.find((item) => item.id === member.coveredByMemberId)
@@ -1706,6 +1801,7 @@ export function TripDesk({
           </div>
         </TabsContent>
       </Tabs>
+      </div>
 
       {profile ? (
         <TripEditDialog

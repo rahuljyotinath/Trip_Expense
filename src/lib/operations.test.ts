@@ -272,6 +272,66 @@ test("setMemberCover clears cover", () => {
   )
 })
 
+test("addExpense keeps client expenseId and is idempotent on retry", () => {
+  const { store, profile } = baseStore()
+  let s = store
+  let group: Group
+  ;({ store: s, group } = seatedTrip(s, profile.id))
+  const payer = group.members[0]!
+  const friend = group.members[1]!
+  const first = addExpense(s, {
+    groupId: group.id,
+    date: "2026-03-02",
+    amount: 80,
+    reason: "Taxi",
+    paidByMemberId: payer.id,
+    participantIds: [payer.id, friend.id],
+    createdByProfileId: profile.id,
+    expenseId: "e_client_1",
+  })
+  assert.equal(first.group.expenses[0]?.id, "e_client_1")
+  const retry = addExpense(first.store, {
+    groupId: group.id,
+    date: "2026-03-02",
+    amount: 80,
+    reason: "Taxi",
+    paidByMemberId: payer.id,
+    participantIds: [payer.id, friend.id],
+    createdByProfileId: profile.id,
+    expenseId: "e_client_1",
+  })
+  assert.equal(retry.group.expenses.length, 1)
+})
+
+test("addPayment keeps client paymentId and is idempotent on retry", () => {
+  const { store, profile } = baseStore()
+  let s = store
+  let group: Group
+  ;({ store: s, group } = seatedTrip(s, profile.id))
+  const opener = group.members[0]!
+  const friend = group.members[1]!
+  const first = addPayment(s, {
+    groupId: group.id,
+    date: "2026-03-02",
+    amount: 10,
+    fromMemberId: friend.id,
+    toMemberId: opener.id,
+    createdByProfileId: profile.id,
+    paymentId: "pay_client_1",
+  })
+  assert.equal(first.group.payments?.[0]?.id, "pay_client_1")
+  const retry = addPayment(first.store, {
+    groupId: group.id,
+    date: "2026-03-02",
+    amount: 10,
+    fromMemberId: friend.id,
+    toMemberId: opener.id,
+    createdByProfileId: profile.id,
+    paymentId: "pay_client_1",
+  })
+  assert.equal(retry.group.payments?.length, 1)
+})
+
 test("addPayment allows paid-back between cover and covered seat", () => {
   const { store, profile } = baseStore()
   let s = store

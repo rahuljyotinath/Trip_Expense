@@ -1,6 +1,6 @@
-/** Tab panel shell: fixed chrome above, scroll below. */
-export const tripTabPanelClass =
-  "flex min-h-0 flex-1 flex-col overflow-hidden pt-3 outline-none"
-
-export const tripTabScrollClass =
+/** Single scrollport below app shell: title, summary, tabs, and tab body. */
+export const tripDeskScrollClass =
   "min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6"
+
+/** Tab panel layout (content height grows inside tripDeskScrollClass). */
+export const tripTabPanelClass = "flex flex-col pt-3 outline-none"

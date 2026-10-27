@@ -235,6 +235,7 @@ export function addExpense(
     split?: SplitMode
     shares?: Record<string, number>
     createdByProfileId: string
+    expenseId?: string
   }
 ) {
   const profile = store.profiles.find((item) => item.id === input.createdByProfileId)
@@ -242,9 +243,14 @@ export function addExpense(
   const group = requireGroup(store, input.groupId)
   requireSeated(group, profile.id)
   const fields = validateExpenseInput(group, input)
+  const requestedId = (input.expenseId ?? "").trim()
+  if (requestedId) {
+    const existing = group.expenses.find((item) => item.id === requestedId)
+    if (existing) return { store, group }
+  }
 
   const expense: Expense = {
-    id: uid("e"),
+    id: requestedId || uid("e"),
     ...fields,
     createdByProfileId: profile.id,
     createdAt: nowIso(),
@@ -395,6 +401,7 @@ export function addPayment(
     fromMemberId: string
     toMemberId: string
     createdByProfileId: string
+    paymentId?: string
   }
 ) {
   const profile = store.profiles.find((item) => item.id === input.createdByProfileId)
@@ -414,8 +421,13 @@ export function addPayment(
   if (!group.members.some((member) => member.id === input.toMemberId)) {
     throw new Error("Receiver is not on this trip.")
   }
+  const requestedId = (input.paymentId ?? "").trim()
+  if (requestedId) {
+    const existing = (group.payments ?? []).find((item) => item.id === requestedId)
+    if (existing) return { store, group }
+  }
   const payment: Payment = {
-    id: uid("pay"),
+    id: requestedId || uid("pay"),
     date: input.date,
     amount: Math.round(input.amount * 100) / 100,
     fromMemberId: input.fromMemberId,

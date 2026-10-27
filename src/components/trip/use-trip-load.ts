@@ -4,9 +4,13 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { profileNeedsSetup } from "@/lib/auth-ops"
 import {
+  cachedGroupById,
+  drainGroupOutbox,
   fetchGroup,
   fetchSessionProfile,
+  isNetworkError,
   loadHealth,
+  startOfflineOutboxSync,
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
@@ -26,6 +30,11 @@ export function useTripLoad(groupId: string, tripPath: string) {
   const [group, setGroup] = useState<Group | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [fromCache, setFromCache] = useState(false)
+
+  useEffect(() => {
+    startOfflineOutboxSync()
+  }, [])
 
   useEffect(() => {
     if (!groupId) return
@@ -35,6 +44,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     ;(async () => {
       setLoading(true)
       setLoadError(null)
+      setFromCache(false)
       setGroup(null)
       try {
         const [nextHealth, session] = await Promise.all([
@@ -58,12 +68,24 @@ export function useTripLoad(groupId: string, tripPath: string) {
         }
         setProfile(session)
         syncProfileToLocalStore(session)
-        const nextGroup = await fetchGroup(groupId, {
-          skipHealth: true,
-          joinCode,
-        })
-        if (cancelled) return
-        setGroup(nextGroup)
+        try {
+          const nextGroup = await fetchGroup(groupId, {
+            skipHealth: true,
+            joinCode,
+          })
+          if (cancelled) return
+          setGroup(nextGroup)
+          setFromCache(false)
+        } catch (err) {
+          if (cancelled) return
+          const cached = isNetworkError(err) ? cachedGroupById(groupId) : null
+          if (cached) {
+            setGroup(cached)
+            setFromCache(true)
+            return
+          }
+          setLoadError(errorText(err))
+        }
       } catch (err) {
         if (!cancelled) setLoadError(errorText(err))
       } finally {
@@ -75,10 +97,28 @@ export function useTripLoad(groupId: string, tripPath: string) {
     }
   }, [groupId, joinCode, router, tripPath])
 
+  useEffect(() => {
+    function onOnline() {
+      void drainGroupOutbox()
+      if (!groupId) return
+      void fetchGroup(groupId, { joinCode })
+        .then((next) => {
+          setGroup(next)
+          setFromCache(false)
+        })
+        .catch(() => {
+          /* keep cached */
+        })
+    }
+    window.addEventListener("online", onOnline)
+    return () => window.removeEventListener("online", onOnline)
+  }, [groupId, joinCode])
+
   async function refreshGroup() {
     if (!groupId) return null
     const next = await fetchGroup(groupId, { joinCode })
     setGroup(next)
+    setFromCache(false)
     return next
   }
 
@@ -89,6 +129,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     setGroup,
     loadError,
     loading,
+    fromCache,
     refreshGroup,
   }
 }

@@ -13,6 +13,9 @@ import {
   groupPaidBackSentByMember,
   paidBackReceivedForMember,
   ledgerDaysForViewer,
+  ledgerDayItems,
+  expenseViewerSecondAmount,
+  paymentViewerTone,
   personalExpenditureForMember,
 } from "./ledger-display"
 import type { Expense, Group } from "./types"
@@ -325,7 +328,7 @@ test("ledgerDaysForViewer merges expenses and payments by date", () => {
   assert.equal(days[1]!.groupSpendTotal, 0)
 })
 
-test("ledgerDaysForViewer hides payments viewer is not part of", () => {
+test("ledgerDaysForViewer shows all paid-back to every member", () => {
   const g = group({
     members: [
       { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
@@ -347,8 +350,118 @@ test("ledgerDaysForViewer hides payments viewer is not part of", () => {
       },
     ],
   })
-  assert.equal(ledgerDaysForViewer(g, "m3").length, 0)
+  assert.equal(ledgerDaysForViewer(g, "m3")[0]!.payments.length, 1)
   assert.equal(ledgerDaysForViewer(g, "m1")[0]!.payments.length, 1)
+})
+
+test("expenseViewerSecondAmount You lent is bill minus viewer share", () => {
+  const e = expense({
+    id: "shared",
+    participantIds: ["m1", "m2"],
+    paidByMemberId: "m1",
+    amount: 100,
+  })
+  const ids = ["m1", "m2"]
+  const lent = expenseViewerSecondAmount(e, "m1", ids)
+  assert.deepEqual(lent, { kind: "lent", amount: 50 })
+  const owe = expenseViewerSecondAmount(e, "m2", ids)
+  assert.deepEqual(owe, { kind: "owe", amount: 50 })
+})
+
+test("expenseViewerSecondAmount percent split uses share cuts", () => {
+  const e = expense({
+    id: "pct",
+    participantIds: ["m1", "m2"],
+    paidByMemberId: "m1",
+    amount: 100,
+    split: "percent",
+    shares: { m1: 70, m2: 30 },
+  })
+  const ids = ["m1", "m2"]
+  assert.deepEqual(expenseViewerSecondAmount(e, "m1", ids), { kind: "lent", amount: 30 })
+  assert.deepEqual(expenseViewerSecondAmount(e, "m2", ids), { kind: "owe", amount: 30 })
+})
+
+test("expenseViewerSecondAmount skips zero lent and unseated or off-bill", () => {
+  const solo = expense({
+    id: "solo",
+    participantIds: ["m1"],
+    paidByMemberId: "m1",
+    amount: 40,
+  })
+  assert.deepEqual(expenseViewerSecondAmount(solo, "m1", ["m1", "m2"]), { kind: "none" })
+  const shared = expense({
+    id: "shared",
+    participantIds: ["m1", "m2"],
+    paidByMemberId: "m1",
+    amount: 80,
+  })
+  assert.deepEqual(expenseViewerSecondAmount(shared, null, ["m1", "m2"]), { kind: "none" })
+  assert.deepEqual(expenseViewerSecondAmount(shared, "m3", ["m1", "m2", "m3"]), {
+    kind: "none",
+  })
+  const treated = expense({
+    id: "treat",
+    participantIds: ["m2"],
+    paidByMemberId: "m1",
+    amount: 60,
+  })
+  assert.deepEqual(expenseViewerSecondAmount(treated, "m1", ["m1", "m2"]), {
+    kind: "lent",
+    amount: 60,
+  })
+})
+
+test("paymentViewerTone is received / paid-back / none", () => {
+  const payment = {
+    id: "pay1",
+    date: "2026-01-02",
+    amount: 20,
+    fromMemberId: "m1",
+    toMemberId: "m2",
+    createdByProfileId: "p1",
+    createdAt: "2026-01-02T12:00:00.000Z",
+    voidedAt: null,
+    voidedByProfileId: null,
+  }
+  assert.equal(paymentViewerTone(payment, "m2"), "received")
+  assert.equal(paymentViewerTone(payment, "m1"), "paid-back")
+  assert.equal(paymentViewerTone(payment, "m3"), "none")
+  assert.equal(paymentViewerTone(payment, null), "none")
+})
+
+test("ledgerDayItems interleaves expenses and payments oldest first", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
+    ],
+    expenses: [
+      expense({
+        id: "shared",
+        participantIds: ["m1", "m2"],
+        paidByMemberId: "m1",
+        date: "2026-01-02",
+        createdAt: "2026-01-02T15:00:00.000Z",
+      }),
+    ],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 20,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T12:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
+    ],
+  })
+  const items = ledgerDayItems(ledgerDaysForViewer(g, "m1")[0]!)
+  assert.equal(items[0]!.kind, "payment")
+  assert.equal(items[1]!.kind, "expense")
 })
 
 test("ledgerPersonalPayments skips voided", () => {

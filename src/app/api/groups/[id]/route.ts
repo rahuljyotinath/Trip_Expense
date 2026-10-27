@@ -101,6 +101,7 @@ export async function PATCH(
       shares?: Record<string, number>
       expenseId?: string
       paymentId?: string
+      clientOpId?: string
       fromMemberId?: string
       toMemberId?: string
       coveredByMemberId?: string | null
@@ -150,6 +151,7 @@ export async function PATCH(
           split: body.split,
           shares: body.shares,
           createdByProfileId: sessionId,
+          expenseId: body.expenseId,
         })
       }
       if (body.action === "delete-expense") {
@@ -193,6 +195,7 @@ export async function PATCH(
           fromMemberId: body.fromMemberId ?? "",
           toMemberId: body.toMemberId ?? "",
           createdByProfileId: sessionId,
+          paymentId: body.paymentId,
         })
       }
       if (body.action === "void-payment") {
