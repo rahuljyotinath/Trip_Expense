@@ -44,7 +44,6 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { tripTabPanelClass, tripTabScrollClass } from "@/components/trip/trip-desk-layout"
-import { TripTravelAffiliate } from "@/components/trip/trip-travel-affiliate"
 import { UpiSettleButton } from "@/components/trip/upi-settle-button"
 import { whatsappInviteMessage, whatsappShareUrl } from "@/lib/whatsapp-invite"
 import { Textarea } from "@/components/ui/textarea"
@@ -63,8 +62,10 @@ import {
   type Health,
 } from "@/lib/client-api"
 import {
+  groupPaidByMember,
   ledgerDaysForViewer,
   ledgerPersonalExpensesForViewer,
+  paidBackReceivedForMember,
   personalExpenditureForMember,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
@@ -898,6 +899,17 @@ function TripSummaryStrip({
     () => (seatId ? personalExpenditureForMember(group, seatId) : 0),
     [group, seatId]
   )
+  const groupPaidTotal = useMemo(
+    () =>
+      seatId
+        ? (groupPaidByMember(group).find((row) => row.memberId === seatId)?.amount ?? 0)
+        : 0,
+    [group, seatId]
+  )
+  const receivedTotal = useMemo(
+    () => (seatId ? paidBackReceivedForMember(group, seatId) : 0),
+    [group, seatId]
+  )
   const mine = seatId ? stats.byMember[seatId] : null
   const net = mine?.net ?? 0
   const balance =
@@ -917,7 +929,7 @@ function TripSummaryStrip({
 
   return (
     <div className="rounded-xl border bg-card/50 px-3 py-2 lg:px-4 lg:py-2.5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-2">
         <div>
           <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
             Trip spend
@@ -941,7 +953,15 @@ function TripSummaryStrip({
                 You paid (group)
               </p>
               <p className="font-heading text-lg lg:text-xl">
-                {formatMoney(mine.paid, group.currency)}
+                {formatMoney(groupPaidTotal, group.currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
+                You received
+              </p>
+              <p className="font-heading text-lg lg:text-xl">
+                {formatMoney(receivedTotal, group.currency)}
               </p>
             </div>
             <div>
@@ -952,7 +972,7 @@ function TripSummaryStrip({
                 {formatMoney(personalSpendTotal, group.currency)}
               </p>
             </div>
-            <div className="sm:col-span-2 lg:col-span-1">
+            <div className="sm:col-span-2 lg:col-span-3">
               <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
                 {balance.label}
               </p>
@@ -1212,10 +1232,6 @@ export function TripDesk({
 
       <div className="shrink-0">
         <TripSummaryStrip group={group} seatId={seat?.id ?? null} />
-      </div>
-
-      <div className="shrink-0">
-        <TripTravelAffiliate group={group} />
       </div>
 
       <Tabs defaultValue="ledger" className="flex min-h-0 flex-1 flex-col">

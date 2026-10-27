@@ -2,7 +2,7 @@
 
 ## UX (in app)
 
-- [`TripTravelAffiliate`](../../src/components/trip/trip-travel-affiliate.tsx) on trip desk when trip has **start or end date**.
+- **Removed:** desk travel affiliate UI (component deleted); env vars for affiliates unused until reintroduced.
 - Opt-in: collapsed by default; dismiss per trip (`sessionStorage`).
 - Copy: optional booking links; **never blocks** ledger / settle.
 - Affiliate IDs: set when partnerships exist; until then generic search URLs.

@@ -60,6 +60,9 @@ export function LedgerSpendChart({
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Who paid &amp; received (group)
           </p>
+          <p className="text-[11px] text-muted-foreground">
+            Paid includes group bills you fronted plus paid-back you sent.
+          </p>
           <ul className="space-y-3">
             {memberFlow.map((row) => (
               <li key={row.memberId} className="space-y-1.5 text-sm">

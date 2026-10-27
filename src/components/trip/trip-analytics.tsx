@@ -127,7 +127,7 @@ export function TripAnalytics({
                       {formatMoney(mine?.share ?? 0, group.currency)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {formatMoney(flow?.paid ?? mine?.paid ?? 0, group.currency)}
+                      {formatMoney(flow?.paid ?? 0, group.currency)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatMoney(flow?.received ?? 0, group.currency)}

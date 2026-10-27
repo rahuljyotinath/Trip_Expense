@@ -146,6 +146,24 @@ export function groupPaidBackReceivedByMember(group: Group): MemberPaidBackRecei
     .sort((a, b) => b.amount - a.amount)
 }
 
+/** Paid-back cash sent per member (all non-void payments). */
+export function groupPaidBackSentByMember(group: Group): MemberPaidBackReceived[] {
+  const totals = new Map<string, number>()
+  for (const payment of ledgerPersonalPayments(group)) {
+    totals.set(
+      payment.fromMemberId,
+      (totals.get(payment.fromMemberId) ?? 0) + payment.amount
+    )
+  }
+  return [...totals.entries()]
+    .map(([memberId, amount]) => ({ memberId, amount }))
+    .sort((a, b) => b.amount - a.amount)
+}
+
+export function paidBackReceivedForMember(group: Group, memberId: string): number {
+  return groupPaidBackReceivedByMember(group).find((row) => row.memberId === memberId)?.amount ?? 0
+}
+
 export type MemberPaidAndReceived = {
   memberId: string
   paid: number
@@ -154,6 +172,9 @@ export type MemberPaidAndReceived = {
 
 export function groupMemberPaidAndReceived(group: Group): MemberPaidAndReceived[] {
   const paidMap = new Map(groupPaidByMember(group).map((row) => [row.memberId, row.amount]))
+  for (const { memberId, amount } of groupPaidBackSentByMember(group)) {
+    paidMap.set(memberId, (paidMap.get(memberId) ?? 0) + amount)
+  }
   const receivedMap = new Map(
     groupPaidBackReceivedByMember(group).map((row) => [row.memberId, row.amount])
   )

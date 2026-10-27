@@ -10,6 +10,8 @@ import {
   groupPaidByMember,
   groupMemberPaidAndReceived,
   groupPaidBackReceivedByMember,
+  groupPaidBackSentByMember,
+  paidBackReceivedForMember,
   ledgerDaysForViewer,
   personalExpenditureForMember,
 } from "./ledger-display"
@@ -211,9 +213,65 @@ test("groupMemberPaidAndReceived merges paid and received", () => {
   })
   const rows = groupMemberPaidAndReceived(g)
   const m1 = rows.find((r) => r.memberId === "m1")
+  const m2 = rows.find((r) => r.memberId === "m2")
   assert.equal(m1?.paid, 200)
   assert.equal(m1?.received, 80)
-  assert.equal(rows.some((r) => r.memberId === "m2"), false)
+  assert.equal(m2?.paid, 80)
+  assert.equal(m2?.received, 0)
+})
+
+test("groupMemberPaidAndReceived includes cash sent in paid", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
+    ],
+    expenses: [],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 40,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T12:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
+    ],
+  })
+  const rows = groupMemberPaidAndReceived(g)
+  assert.equal(rows.find((r) => r.memberId === "m1")?.paid, 40)
+  assert.equal(rows.find((r) => r.memberId === "m1")?.received, 0)
+  assert.equal(rows.find((r) => r.memberId === "m2")?.received, 40)
+  assert.equal(rows.find((r) => r.memberId === "m2")?.paid, 0)
+})
+
+test("groupPaidBackSentByMember and paidBackReceivedForMember", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "A", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "B", profileId: "p2", coveredByMemberId: null },
+    ],
+    expenses: [],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 25,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T12:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
+    ],
+  })
+  assert.equal(groupPaidBackSentByMember(g).find((r) => r.memberId === "m1")?.amount, 25)
+  assert.equal(paidBackReceivedForMember(g, "m2"), 25)
+  assert.equal(paidBackReceivedForMember(g, "m1"), 0)
 })
 
 test("ledgerDaysForViewer merges expenses and payments by date", () => {
