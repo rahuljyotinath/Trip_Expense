@@ -1,7 +1,7 @@
 "use client"
 
 import { ProfileLink } from "@/components/profile/profile-link"
-import { applyGroupPatchOptimistic } from "@/components/waybill-app"
+import { applyGroupPatchOptimistic } from "@/lib/group-patch-optimistic"
 import { Button } from "@/components/ui/button"
 import {
   Card,

@@ -1,5 +1,10 @@
 import { resolveSessionSecret } from "@/lib/auth-crypto"
-import { probePostgres, storageErrorMessage, storageMode } from "@/lib/db"
+import {
+  probePostgres,
+  readLedgerDataByteSize,
+  storageErrorMessage,
+  storageMode,
+} from "@/lib/db"
 import { json } from "@/lib/http"
 import { connection } from "next/server"
 
@@ -17,13 +22,17 @@ export async function GET() {
   const mode = storageMode()
   const ready = sessionReady()
   if (mode === "postgres") {
-    const postgres = await probePostgres()
+    const [postgres, ledgerDataBytes] = await Promise.all([
+      probePostgres(),
+      readLedgerDataByteSize(),
+    ])
     return json({
       mode,
       connected: postgres.connected,
       warning: storageErrorMessage(postgres),
       error: postgres.error,
       ledgerVersion: postgres.version ?? null,
+      ledgerDataBytes,
       sessionReady: ready,
     })
   }

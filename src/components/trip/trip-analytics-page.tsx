@@ -1,14 +1,11 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
-import {
-  Shell,
-  applyGroupPatchOptimistic,
-  ExpenseDialog,
-  PaymentDialog,
-} from "@/components/waybill-app"
+import { Shell } from "@/components/waybill-app"
+import { applyGroupPatchOptimistic } from "@/lib/group-patch-optimistic"
 import { TripAnalytics } from "@/components/trip/trip-analytics"
 import { TripPageChrome } from "@/components/trip/trip-page-chrome"
 import { useTripLoad } from "@/components/trip/use-trip-load"
@@ -26,6 +23,21 @@ import { logoutUser } from "@/lib/client-api"
 import { isTripAdmin } from "@/lib/trip-invites"
 import type { Group } from "@/lib/types"
 import { AlertCircle } from "lucide-react"
+
+const ExpenseDialog = dynamic(
+  () =>
+    import("@/components/trip/trip-expense-payment-dialogs").then((m) => ({
+      default: m.ExpenseDialog,
+    })),
+  { ssr: false }
+)
+const PaymentDialog = dynamic(
+  () =>
+    import("@/components/trip/trip-expense-payment-dialogs").then((m) => ({
+      default: m.PaymentDialog,
+    })),
+  { ssr: false }
+)
 
 function mySeat(group: Group, profileId: string) {
   return group.members.find((member) => member.profileId === profileId) ?? null

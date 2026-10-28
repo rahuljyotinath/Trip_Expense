@@ -1,23 +1,9 @@
 import { profileFromId } from "@/lib/auth-ops"
-import {
-  invalidateLoadCache,
-  probePostgres,
-  readGroupById,
-  readStoreFresh,
-  storageMode,
-  updateStore,
-} from "@/lib/db"
+import { probePostgres, storageMode, updateStore } from "@/lib/db"
+import { loadTripGetPayload } from "@/lib/trip-get-context"
 import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
-import {
-  isTripAdmin,
-  joinRequestsForGroup,
-  joinRequestForProfile,
-  storeTripInvites,
-} from "@/lib/trip-invites"
-import { linkedProfilesForGroup } from "@/lib/linked-trip-profiles"
-import { canViewGroup } from "@/lib/trip-access"
 import {
   addExpense,
   addMember,
@@ -56,59 +42,20 @@ export async function GET(
   const joinCode = new URL(request.url).searchParams.get("join")
   try {
     await connection()
-    invalidateLoadCache()
-    let group = await readGroupById(id)
-    if (!group) {
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      invalidateLoadCache()
-      if (storageMode() === "postgres") {
-        group = await readGroupById(id)
-      } else {
-        const store = await readStoreFresh()
-        group = store.groups.find((item) => item.id === id) ?? null
+    const payload = await loadTripGetPayload(id, sessionId, joinCode)
+    if ("error" in payload) {
+      if (payload.error === "not_found") {
+        const mode = storageMode()
+        const postgres =
+          mode === "postgres" ? await probePostgres() : { version: undefined }
+        console.warn(
+          `[groups GET] trip not found id=${id} mode=${mode} ledgerVersion=${postgres.version ?? "n/a"}`
+        )
+        return json({ error: "Trip not found." }, 404)
       }
-    }
-    if (!group) {
-      const mode = storageMode()
-      const postgres =
-        mode === "postgres" ? await probePostgres() : { version: undefined }
-      console.warn(
-        `[groups GET] trip not found id=${id} mode=${mode} ledgerVersion=${postgres.version ?? "n/a"}`
-      )
-      return json({ error: "Trip not found." }, 404)
-    }
-    const store = await readStoreFresh()
-    const joinRequests = store.joinRequests ?? []
-    if (!canViewGroup(sessionId, group, { joinCode, joinRequests })) {
       return json({ error: "You don't have access to this trip." }, 403)
     }
-    const joinRequest = joinRequestForProfile(store, group.id, sessionId)
-    const admin = isTripAdmin(group, sessionId)
-    const pendingJoinRequests = admin
-      ? joinRequestsForGroup(store, group.id)
-          .filter((item) => item.status === "pending")
-          .map((item) => ({
-            ...item,
-            profileName:
-              store.profiles.find((profile) => profile.id === item.profileId)?.name ??
-              "Traveler",
-            profileUsername:
-              store.profiles.find((profile) => profile.id === item.profileId)
-                ?.username ?? null,
-          }))
-      : undefined
-    const pendingTripInvites = admin
-      ? storeTripInvites(store).filter(
-          (item) => item.groupId === group.id && item.status === "pending"
-        )
-      : undefined
-    return json({
-      group,
-      joinRequest,
-      pendingJoinRequests,
-      pendingTripInvites,
-      linkedProfiles: linkedProfilesForGroup(store, group),
-    })
+    return json(payload)
   } catch (error) {
     return fail(error)
   }

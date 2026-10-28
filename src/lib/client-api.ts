@@ -37,7 +37,10 @@ import {
   voidPayment,
 } from "@/lib/operations"
 import { linkedProfilesForGroup } from "@/lib/linked-trip-profiles"
-import { joinRequestForProfile } from "@/lib/trip-invites"
+import {
+  joinRequestForProfile,
+  pendingInvitesForProfile,
+} from "@/lib/trip-invites"
 import { findProfileForContactSearch } from "@/lib/trip-contacts"
 import { publicProfileView } from "@/lib/types"
 import { nowIso } from "@/lib/ids"
@@ -71,6 +74,7 @@ export type Health = {
   connected: boolean
   error?: string | null
   ledgerVersion?: number | null
+  ledgerDataBytes?: number | null
   sessionReady?: boolean
 }
 
@@ -495,6 +499,21 @@ export type PendingTripInvite = {
   tripName: string
 }
 
+export function pendingTripInviteBanner(
+  invite: TripInvite | null | undefined,
+  group: Group
+): PendingTripInvite | null {
+  if (!invite || invite.status !== "pending") return null
+  return {
+    id: invite.id,
+    groupId: invite.groupId,
+    invitedEmail: invite.invitedEmail,
+    invitedPhone: invite.invitedPhone,
+    status: invite.status,
+    tripName: group.name,
+  }
+}
+
 export async function fetchPendingTripInvites(): Promise<PendingTripInvite[]> {
   if (mode === "unconfigured") return []
   const data = await request<{ invites: PendingTripInvite[] }>("/api/trip-invites")
@@ -554,11 +573,11 @@ export type GroupFetchDetail = {
   pendingJoinRequests: PendingJoinRequestRow[]
   pendingTripInvites: TripInvite[]
   linkedProfiles: LinkedTripProfile[]
+  viewerTripInvite: TripInvite | null
 }
 
 async function requestGroupById(
   id: string,
-  allowRetry: boolean,
   joinCode?: string | null
 ): Promise<GroupFetchDetail> {
   const joinQuery =
@@ -579,15 +598,12 @@ async function requestGroupById(
       pendingJoinRequests?: PendingJoinRequestRow[]
       pendingTripInvites?: TripInvite[]
       linkedProfiles?: LinkedTripProfile[]
+      viewerTripInvite?: TripInvite | null
       error?: string
     }
     if (response.status === 503 || data.error === "unconfigured") {
       mode = "unconfigured"
       throw new Error("unconfigured")
-    }
-    if (response.status === 404 && data.error === "Trip not found." && allowRetry) {
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      return requestGroupById(id, false, joinCode)
     }
     if (!response.ok) {
       throw new Error(data.error || "Request failed.")
@@ -599,6 +615,7 @@ async function requestGroupById(
       pendingJoinRequests: data.pendingJoinRequests ?? [],
       pendingTripInvites: data.pendingTripInvites ?? [],
       linkedProfiles: data.linkedProfiles ?? [],
+      viewerTripInvite: data.viewerTripInvite ?? null,
     }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -620,16 +637,26 @@ export async function fetchGroupDetail(
     const store = readLocalStore()
     const group = store.groups.find((item) => item.id === id)
     if (!group) throw new Error("Trip not found.")
-    const profileId = loadSavedProfile()?.id ?? ""
+    const saved = loadSavedProfile()
+    const profileId = saved?.id ?? ""
+    const fullProfile = profileId
+      ? store.profiles.find((item) => item.id === profileId)
+      : undefined
+    const viewerTripInvite = fullProfile
+      ? (pendingInvitesForProfile(store, publicProfile(fullProfile)).find(
+          (item) => item.groupId === id
+        ) ?? null)
+      : null
     return {
       group,
       joinRequest: profileId ? joinRequestForProfile(store, id, profileId) : null,
       pendingJoinRequests: [],
       pendingTripInvites: [],
       linkedProfiles: linkedProfilesForGroup(store, group),
+      viewerTripInvite,
     }
   }
-  const detail = await requestGroupById(id, true, options?.joinCode)
+  const detail = await requestGroupById(id, options?.joinCode)
   const merged = applyPendingOutbox(detail.group)
   persistGroupSnapshot(merged)
   return { ...detail, group: merged }

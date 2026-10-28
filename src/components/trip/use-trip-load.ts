@@ -44,6 +44,9 @@ export function useTripLoad(groupId: string, tripPath: string) {
   >([])
   const [pendingTripInvites, setPendingTripInvites] = useState<TripInvite[]>([])
   const [linkedProfiles, setLinkedProfiles] = useState<LinkedTripProfile[]>([])
+  const [viewerTripInvite, setViewerTripInvite] = useState<TripInvite | null>(
+    null
+  )
 
   useEffect(() => {
     startOfflineOutboxSync()
@@ -89,6 +92,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
           setPendingJoinRequests(detail.pendingJoinRequests)
           setPendingTripInvites(detail.pendingTripInvites)
           setLinkedProfiles(detail.linkedProfiles)
+          setViewerTripInvite(detail.viewerTripInvite)
           setFromCache(false)
         } catch (err) {
           if (cancelled) return
@@ -121,6 +125,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
           setPendingJoinRequests(detail.pendingJoinRequests)
           setPendingTripInvites(detail.pendingTripInvites)
           setLinkedProfiles(detail.linkedProfiles)
+          setViewerTripInvite(detail.viewerTripInvite)
           setFromCache(false)
         })
         .catch(() => {
@@ -138,6 +143,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     setPendingJoinRequests(detail.pendingJoinRequests)
     setPendingTripInvites(detail.pendingTripInvites)
     setLinkedProfiles(detail.linkedProfiles)
+    setViewerTripInvite(detail.viewerTripInvite)
     setFromCache(false)
     return detail.group
   }
@@ -153,6 +159,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
     pendingJoinRequests,
     pendingTripInvites,
     linkedProfiles,
+    viewerTripInvite,
     refreshGroup,
   }
 }

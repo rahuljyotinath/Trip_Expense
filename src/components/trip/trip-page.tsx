@@ -2,17 +2,16 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { Shell, TripDesk } from "@/components/waybill-app"
 import { useTripLoad } from "@/components/trip/use-trip-load"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   claimSeat,
-  fetchPendingTripInvites,
   logoutUser,
+  pendingTripInviteBanner,
   respondTripInvite,
-  type PendingTripInvite,
 } from "@/lib/client-api"
 import { AlertCircle } from "lucide-react"
 
@@ -36,6 +35,7 @@ export function TripPage() {
     loading,
     fromCache,
     linkedProfiles,
+    viewerTripInvite,
     refreshGroup,
   } = useTripLoad(groupId, tripPath)
 
@@ -44,26 +44,16 @@ export function TripPage() {
   const [copied, setCopied] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [emailInvite, setEmailInvite] = useState<PendingTripInvite | null>(null)
+  const [dismissedInviteId, setDismissedInviteId] = useState<string | null>(
+    null
+  )
 
-  useEffect(() => {
-    if (!profile || !group) {
-      setEmailInvite(null)
-      return
-    }
-    let cancelled = false
-    void fetchPendingTripInvites()
-      .then((invites) => {
-        if (cancelled) return
-        setEmailInvite(invites.find((item) => item.groupId === group.id) ?? null)
-      })
-      .catch(() => {
-        if (!cancelled) setEmailInvite(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [profile, group])
+  const emailInvite = useMemo(() => {
+    if (!group) return null
+    const banner = pendingTripInviteBanner(viewerTripInvite, group)
+    if (!banner || banner.id === dismissedInviteId) return null
+    return banner
+  }, [group, viewerTripInvite, dismissedInviteId])
 
   async function copyInvite(value: string) {
     await navigator.clipboard.writeText(value)
@@ -149,7 +139,7 @@ export function TripPage() {
                   setDeskError(null)
                   void respondTripInvite("accept", emailInvite.id)
                     .then((next) => {
-                      setEmailInvite(null)
+                      setDismissedInviteId(emailInvite.id)
                       if (next) setGroup(next)
                       return refreshGroup()
                     })

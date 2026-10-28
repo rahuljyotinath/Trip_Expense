@@ -7,8 +7,10 @@ import {
   normalizeProfile,
   normalizeStore,
   type Group,
+  type JoinRequest,
   type Profile,
   type Store,
+  type TripInvite,
 } from "./types"
 import { postgresConfig, storageMode } from "./storage-mode"
 import { storesEqual } from "./store-compare"
@@ -52,7 +54,7 @@ function getPostgres() {
   if (!url) throw new Error("Postgres is not configured.")
   if (!postgresClient) {
     postgresClient = postgres(url, {
-      max: 1,
+      max: Number(process.env.POSTGRES_POOL_MAX || 4),
       prepare: false,
       connect_timeout: 10,
       idle_timeout: 60,
@@ -241,6 +243,95 @@ async function readPostgresGroupById(groupId: string): Promise<Group | null> {
   `
   const row = rows[0]?.trip
   return row ? normalizeGroup(row) : null
+}
+
+export type StoreLedgerMeta = {
+  joinRequests: JoinRequest[]
+  tripInvites: TripInvite[]
+}
+
+function parseJoinRequests(value: unknown): JoinRequest[] {
+  if (!Array.isArray(value)) return []
+  return (
+    normalizeStore({
+      profiles: [],
+      groups: [],
+      joinRequests: value as JoinRequest[],
+    }).joinRequests ?? []
+  )
+}
+
+function parseTripInvites(value: unknown): TripInvite[] {
+  if (!Array.isArray(value)) return []
+  return (
+    normalizeStore({
+      profiles: [],
+      groups: [],
+      tripInvites: value as TripInvite[],
+    }).tripInvites ?? []
+  )
+}
+
+/** Join requests + trip invites only (not full groups/expenses blob). */
+export async function readStoreLedgerMeta(): Promise<StoreLedgerMeta> {
+  if (storageMode() === "postgres") {
+    const sql = getPostgres()
+    const rows = await sql<{ join_requests: unknown; trip_invites: unknown }[]>`
+      SELECT
+        data->'joinRequests' AS join_requests,
+        data->'tripInvites' AS trip_invites
+      FROM ledger_store
+      WHERE id = ${LEDGER_ROW_ID}
+    `
+    if (rows.length === 0) {
+      return { joinRequests: [], tripInvites: [] }
+    }
+    return {
+      joinRequests: parseJoinRequests(rows[0]!.join_requests),
+      tripInvites: parseTripInvites(rows[0]!.trip_invites),
+    }
+  }
+  const store = await readStore()
+  return {
+    joinRequests: store.joinRequests ?? [],
+    tripInvites: store.tripInvites ?? [],
+  }
+}
+
+/** Profiles referenced on a trip (roster + join flow), not the full ledger. */
+export async function readProfilesByIds(ids: string[]): Promise<Profile[]> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  if (unique.length === 0) return []
+  if (storageMode() === "postgres") {
+    const sql = getPostgres()
+    const rows = await sql<{ profile: Profile }[]>`
+      SELECT elem AS profile
+      FROM ledger_store,
+        jsonb_array_elements(data->'profiles') AS elem
+      WHERE ledger_store.id = ${LEDGER_ROW_ID}
+        AND elem->>'id' IN ${sql(unique)}
+    `
+    return rows.map((row) => normalizeProfile(row.profile))
+  }
+  const store = await readStore()
+  const wanted = new Set(unique)
+  return store.profiles.filter((item) => wanted.has(item.id))
+}
+
+/** Approximate JSON payload size for ops / health (Postgres only). */
+export async function readLedgerDataByteSize(): Promise<number | null> {
+  if (storageMode() !== "postgres") return null
+  try {
+    const sql = getPostgres()
+    const rows = await sql<{ bytes: number }[]>`
+      SELECT octet_length(data::text)::int AS bytes
+      FROM ledger_store
+      WHERE id = ${LEDGER_ROW_ID}
+    `
+    return rows[0]?.bytes ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Trip GET: one group row when on Postgres (avoids loading full ledger). */
