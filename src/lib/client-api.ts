@@ -41,7 +41,10 @@ import {
   joinRequestForProfile,
   pendingInvitesForProfile,
 } from "@/lib/trip-invites"
-import { findProfileForContactSearch } from "@/lib/trip-contacts"
+import {
+  assertRosterProfileIdsAreFriends,
+  findProfileForContactSearch,
+} from "@/lib/trip-contacts"
 import { publicProfileView } from "@/lib/types"
 import { nowIso } from "@/lib/ids"
 import {
@@ -552,37 +555,52 @@ export async function respondTripInvite(action: "accept" | "decline", inviteId: 
   return data.group ?? null
 }
 
-export type KnownContact = {
+export type Friend = {
   id: string
   name: string
   username: string
   contactId: string
-  source: "search" | "trip" | "invite"
+  source: "search" | "friend" | "trip" | "invite"
   createdAt: string
 }
 
-export async function fetchKnownContacts(): Promise<KnownContact[]> {
+/** @deprecated Use Friend */
+export type KnownContact = Friend
+
+export async function fetchFriends(): Promise<Friend[]> {
   if (mode === "unconfigured") return []
-  const data = await request<{ contacts: KnownContact[] }>("/api/contacts")
+  const data = await request<{ contacts: Friend[] }>("/api/contacts")
   return data.contacts ?? []
 }
 
-export async function addKnownContact(input: { query?: string; targetProfileId?: string }) {
+export async function fetchKnownContacts(): Promise<Friend[]> {
+  return fetchFriends()
+}
+
+export async function addFriend(input: { query?: string; targetProfileId?: string }) {
   if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
-  const data = await request<{ contacts: KnownContact[] }>("/api/contacts", {
+  const data = await request<{ contacts: Friend[] }>("/api/contacts", {
     method: "POST",
     body: JSON.stringify(input),
   })
   return data.contacts ?? []
 }
 
-export async function removeKnownContact(targetProfileId: string) {
+export async function addKnownContact(input: { query?: string; targetProfileId?: string }) {
+  return addFriend(input)
+}
+
+export async function removeFriend(targetProfileId: string) {
   if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
-  const data = await request<{ contacts: KnownContact[] }>("/api/contacts", {
+  const data = await request<{ contacts: Friend[] }>("/api/contacts", {
     method: "POST",
     body: JSON.stringify({ action: "remove", targetProfileId }),
   })
   return data.contacts ?? []
+}
+
+export async function removeKnownContact(targetProfileId: string) {
+  return removeFriend(targetProfileId)
 }
 
 export type PendingJoinRequestRow = JoinRequest & {
@@ -693,9 +711,12 @@ export async function fetchGroup(
   return detail.group
 }
 
+export type TripRosterEntry = { name: string; profileId?: string | null }
+
 export async function openTrip(input: {
   name: string
-  memberNames: string[]
+  memberNames?: string[]
+  roster?: TripRosterEntry[]
   createdByProfileId: string
   currency?: string
   startDate?: string | null
@@ -703,7 +724,11 @@ export async function openTrip(input: {
 }) {
   requireNetworkForInvite()
   if (mode === "unconfigured") {
-    const result = createGroup(readLocalStore(), input)
+    const store = readLocalStore()
+    if (input.roster?.length) {
+      assertRosterProfileIdsAreFriends(store, input.createdByProfileId, input.roster)
+    }
+    const result = createGroup(store, input)
     writeLocalStore(result.store)
     return result.group
   }

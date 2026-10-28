@@ -48,7 +48,7 @@ Errors: `{ error: string }`, status 401/503.
 |-------|--------|--------------|---------|
 | `/api/groups?profileId=` | GET | session must match profileId | `{ groups: Group[] }` |
 | `/api/groups?code=` | GET | join lookup | `{ group, joinRequest }` |
-| `/api/groups` | POST | create trip payload | `{ group }` |
+| `/api/groups` | POST | `{ name, currency?, startDate?, endDate?, roster?, memberNames? }` — prefer **`roster`**: `[{ name, profileId? }]`; linked `profileId` must be a friend (see contacts). Legacy **`memberNames`**: string[] nicknames only. | `{ group }` |
 | `/api/groups/{id}` | GET | optional `?join=CODE` | Trip payload (group, linkedProfiles, invites, …) |
 | `/api/groups/{id}` | PATCH | `{ action, ... }` | `{ group }` |
 
@@ -56,12 +56,18 @@ PATCH **`action`** values include: `add-expense`, `add-payment`, `claim`, `reque
 
 Idempotency: include **`clientOpId`**, **`expenseId`**, **`paymentId`** on add actions (web client uses [`withClientPatchIds`](../src/lib/offline-outbox.ts)).
 
-## Contacts & invites
+## Friends (contacts)
 
-| Route | Method | Success |
-|-------|--------|---------|
-| `/api/contacts` | GET | `{ contacts }` |
-| `/api/contacts` | POST | add/remove contact |
+One-way list: add by @username (no accept). Same **`/api/contacts`** API; UI calls these friends.
+
+| Route | Method | Body | Success |
+|-------|--------|------|---------|
+| `/api/contacts` | GET | | `{ contacts: Friend[] }` |
+| `/api/contacts` | POST | `{ query }` or `{ targetProfileId }` add; `{ action: "remove", targetProfileId }` remove | `{ contacts }` |
+
+Contact **`source`**: `friend` (manual), `trip` (shared trip), `invite`, `search` (legacy).
+
+## Trip invites
 | `/api/trip-invites` | GET | `{ invites }` |
 | `/api/trip-invites` | POST | accept/decline invite |
 

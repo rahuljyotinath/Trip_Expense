@@ -67,11 +67,11 @@ import {
   fetchGroupByCode,
   fetchPendingTripInvites,
   respondTripInvite,
-  fetchKnownContacts,
-  addKnownContact,
-  removeKnownContact,
+  fetchFriends,
+  addFriend,
+  removeFriend,
   previewProfileForContactQuery,
-  type KnownContact,
+  type Friend,
   fetchMyGroups,
   persistGroupSnapshots,
   loadHealth,
@@ -143,7 +143,8 @@ export function WaybillApp() {
   const [pendingInvites, setPendingInvites] = useState<
     Awaited<ReturnType<typeof fetchPendingTripInvites>>
   >([])
-  const [knownContacts, setKnownContacts] = useState<KnownContact[]>([])
+  const [friends, setFriends] = useState<Friend[]>([])
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([])
 
   async function refreshGroups(nextProfile: PublicProfile) {
     const list = await fetchMyGroups(nextProfile.id)
@@ -204,18 +205,18 @@ export function WaybillApp() {
             fetchPendingTripInvites().catch(() => [] as Awaited<
               ReturnType<typeof fetchPendingTripInvites>
             >),
-            fetchKnownContacts().catch(() => [] as KnownContact[]),
+            fetchFriends().catch(() => [] as Friend[]),
           ])
           if (cancelled) return
           persistGroupSnapshots(list)
           setGroups(list)
           setPendingInvites(invites)
-          setKnownContacts(contacts)
+          setFriends(contacts)
         } catch (err) {
           if (!cancelled) {
             setGroups([])
             setPendingInvites([])
-            setKnownContacts([])
+            setFriends([])
             setError(errorText(err))
           }
         }
@@ -268,9 +269,22 @@ export function WaybillApp() {
 
   async function onCreateTrip() {
     if (!profile) return
-    const memberNames = rosterNames()
-    if (memberNames.length < 2) {
-      setError("Add at least one other nickname, then write the roster.")
+    const names = rosterNames()
+    const manualOthers = names.filter(
+      (item) => item.toLowerCase() !== profile.name.toLowerCase()
+    )
+    const friendRows = friends
+      .filter((item) => selectedFriendIds.includes(item.id))
+      .map((item) => ({ name: item.name, profileId: item.id }))
+    const friendNameKeys = new Set(
+      friendRows.map((item) => item.name.toLowerCase())
+    )
+    const manualRows = manualOthers
+      .filter((item) => !friendNameKeys.has(item.toLowerCase()))
+      .map((name) => ({ name }))
+    const roster = [...friendRows, ...manualRows]
+    if (roster.length < 1) {
+      setError("Add at least one friend or nickname, then write the roster.")
       return
     }
     setBusy(true)
@@ -278,7 +292,7 @@ export function WaybillApp() {
     try {
       const next = await openTrip({
         name: tripName,
-        memberNames,
+        roster,
         createdByProfileId: profile.id,
         currency,
         startDate: tripStartDate.trim() || null,
@@ -292,6 +306,7 @@ export function WaybillApp() {
       setTripEndDate("")
       setPeople([])
       setPersonDraft("")
+      setSelectedFriendIds([])
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -365,23 +380,23 @@ export function WaybillApp() {
           groups={groups}
           busy={busy}
           pendingInvites={pendingInvites}
-          knownContacts={knownContacts}
-          onAddContact={async (query) => {
+          friends={friends}
+          onAddFriend={async (query) => {
             setBusy(true)
             setError(null)
             try {
-              setKnownContacts(await addKnownContact({ query }))
+              setFriends(await addFriend({ query }))
             } catch (err) {
               setError(errorText(err))
             } finally {
               setBusy(false)
             }
           }}
-          onRemoveContact={async (targetProfileId) => {
+          onRemoveFriend={async (targetProfileId) => {
             setBusy(true)
             setError(null)
             try {
-              setKnownContacts(await removeKnownContact(targetProfileId))
+              setFriends(await removeFriend(targetProfileId))
             } catch (err) {
               setError(errorText(err))
             } finally {
@@ -422,6 +437,7 @@ export function WaybillApp() {
           onCreate={() => {
             setError(null)
             setPeople(profile.name ? [profile.name] : [])
+            setSelectedFriendIds([])
             setScreen("create")
           }}
           onJoin={() => {
@@ -443,6 +459,8 @@ export function WaybillApp() {
           endDate={tripEndDate}
           people={people}
           personDraft={personDraft}
+          friends={friends}
+          selectedFriendIds={selectedFriendIds}
           busy={busy}
           onTripName={setTripName}
           onCurrency={setCurrency}
@@ -453,6 +471,13 @@ export function WaybillApp() {
           onRemovePerson={(value) =>
             setPeople((current) => current.filter((item) => item !== value))
           }
+          onToggleFriend={(friendId) => {
+            setSelectedFriendIds((current) =>
+              current.includes(friendId)
+                ? current.filter((id) => id !== friendId)
+                : [...current, friendId]
+            )
+          }}
           onBack={() => setScreen("home")}
           onSubmit={onCreateTrip}
         />
@@ -532,9 +557,9 @@ function Home({
   groups,
   busy,
   pendingInvites,
-  knownContacts,
-  onAddContact,
-  onRemoveContact,
+  friends,
+  onAddFriend,
+  onRemoveFriend,
   onInviteAccept,
   onInviteDecline,
   onCreate,
@@ -545,9 +570,9 @@ function Home({
   groups: Group[] | null
   busy: boolean
   pendingInvites: Awaited<ReturnType<typeof fetchPendingTripInvites>>
-  knownContacts: KnownContact[]
-  onAddContact: (query: string) => void
-  onRemoveContact: (targetProfileId: string) => void
+  friends: Friend[]
+  onAddFriend: (query: string) => void
+  onRemoveFriend: (targetProfileId: string) => void
   onInviteAccept: (inviteId: string) => void
   onInviteDecline: (inviteId: string) => void
   onCreate: () => void
@@ -633,15 +658,15 @@ function Home({
       <Separator />
       <Card>
         <CardHeader>
-          <CardTitle>Known contacts</CardTitle>
+          <CardTitle>Friends</CardTitle>
           <CardDescription>
-            People you saved. Exact @username, email, or phone — not a public directory.
+            Add by @username — one-way, no accept needed. Trip mates also show up here.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input
-              placeholder="@username, email, or phone"
+              placeholder="@username"
               value={contactQuery}
               disabled={busy}
               onChange={(event) => setContactQuery(event.target.value)}
@@ -652,12 +677,12 @@ function Home({
               onClick={() => {
                 const q = contactQuery.trim()
                 if (!q) return
-                void onAddContact(q)
+                void onAddFriend(q)
                 setContactQuery("")
                 setContactPreview(null)
               }}
             >
-              Add contact
+              Add friend
             </Button>
           </div>
           {contactPreview?.username ? (
@@ -668,13 +693,13 @@ function Home({
               </ProfileLink>
             </p>
           ) : null}
-          {knownContacts.length === 0 ? (
+          {friends.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Shared trips with linked profiles appear here automatically.
+              Add friends by username, or share a trip — linked profiles appear here too.
             </p>
           ) : (
             <ul className="space-y-1">
-              {knownContacts.map((contact) => (
+              {friends.map((contact) => (
                 <li
                   key={contact.contactId}
                   className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
@@ -696,7 +721,7 @@ function Home({
                     size="xs"
                     variant="ghost"
                     disabled={busy}
-                    onClick={() => onRemoveContact(contact.id)}
+                    onClick={() => onRemoveFriend(contact.id)}
                   >
                     Remove
                   </Button>
@@ -765,6 +790,8 @@ function CreateTrip({
   endDate,
   people,
   personDraft,
+  friends,
+  selectedFriendIds,
   busy,
   onTripName,
   onCurrency,
@@ -773,6 +800,7 @@ function CreateTrip({
   onDraft,
   onAddPerson,
   onRemovePerson,
+  onToggleFriend,
   onBack,
   onSubmit,
 }: {
@@ -783,6 +811,8 @@ function CreateTrip({
   endDate: string
   people: string[]
   personDraft: string
+  friends: Friend[]
+  selectedFriendIds: string[]
   busy: boolean
   onTripName: (value: string) => void
   onCurrency: (value: string) => void
@@ -791,10 +821,22 @@ function CreateTrip({
   onDraft: (value: string) => void
   onAddPerson: () => void
   onRemovePerson: (value: string) => void
+  onToggleFriend: (friendId: string) => void
   onBack: () => void
   onSubmit: () => void
 }) {
-  const canWrite = Boolean(tripName.trim()) && (people.length >= 2 || personDraft.trim().length > 0)
+  const manualOthers = people.filter(
+    (item) => item.toLowerCase() !== profile.name.toLowerCase()
+  ).length
+  const draftExtra =
+    personDraft.trim() &&
+    !people.some(
+      (item) => item.toLowerCase() === personDraft.trim().toLowerCase()
+    )
+      ? 1
+      : 0
+  const rosterOthers = selectedFriendIds.length + manualOthers + draftExtra
+  const canWrite = Boolean(tripName.trim()) && rosterOthers >= 1
 
   return (
     <Card className="max-w-xl">
@@ -858,8 +900,38 @@ function CreateTrip({
             />
           </div>
         </div>
+        {friends.length > 0 ? (
+          <div className="space-y-2">
+            <Label>Friends on this trip</Label>
+            <p className="text-xs text-muted-foreground">
+              Selected friends join with their profile linked — no seat claim needed.
+            </p>
+            <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border p-2">
+              {friends.map((friend) => {
+                const selected = selectedFriendIds.includes(friend.id)
+                return (
+                  <li key={friend.contactId}>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
+                      <Checkbox
+                        checked={selected}
+                        disabled={busy}
+                        onCheckedChange={() => onToggleFriend(friend.id)}
+                      />
+                      <span>
+                        {friend.name}
+                        {friend.username ? (
+                          <span className="text-muted-foreground"> @{friend.username}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
         <div className="space-y-2">
-          <Label htmlFor="person">Nicknames on the trip</Label>
+          <Label htmlFor="person">Other nicknames (no account)</Label>
           <div className="flex gap-2">
             <Input
               id="person"
@@ -897,8 +969,8 @@ function CreateTrip({
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            You are already on the list. Type another nickname and write — Enter
-            is enough, no extra click.
+            You are on the roster automatically. Pick friends above or add nicknames
+            for people without accounts.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -912,7 +984,7 @@ function CreateTrip({
             <span className="text-xs text-stamp">
               {!tripName.trim()
                 ? "Name the trip first."
-                : "Need one more nickname."}
+                : "Add a friend or one more nickname."}
             </span>
           ) : null}
         </div>

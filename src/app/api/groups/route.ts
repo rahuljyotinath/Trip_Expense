@@ -2,6 +2,7 @@ import { profileFromId } from "@/lib/auth-ops"
 import {
   readGroupByCode,
   readGroupsForProfile,
+  readStoreForContacts,
   readStoreLedgerMeta,
   storageMode,
   updateStore,
@@ -10,7 +11,8 @@ import { fail, json, readBody } from "@/lib/http"
 import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
 import { joinRequestForProfile } from "@/lib/trip-invites"
-import { createGroup } from "@/lib/operations"
+import { createGroup, type RosterEntry } from "@/lib/operations"
+import { assertRosterProfileIdsAreFriends } from "@/lib/trip-contacts"
 import { emptyStore } from "@/lib/types"
 
 export async function GET(request: Request) {
@@ -59,8 +61,14 @@ export async function POST(request: Request) {
       startDate?: string | null
       endDate?: string | null
       memberNames?: string[]
+      roster?: RosterEntry[]
       createdByProfileId?: string
     }>(request)
+    const roster = body.roster?.length ? body.roster : undefined
+    if (roster) {
+      const contactStore = await readStoreForContacts(sessionId)
+      assertRosterProfileIdsAreFriends(contactStore, sessionId, roster)
+    }
     const result = await updateStore(
       (store) => {
       if (!profileFromId(store, sessionId)) {
@@ -71,7 +79,7 @@ export async function POST(request: Request) {
         currency: body.currency,
         startDate: body.startDate,
         endDate: body.endDate,
-        memberNames: body.memberNames ?? [],
+        ...(roster ? { roster } : { memberNames: body.memberNames ?? [] }),
         createdByProfileId: sessionId,
       })
     },

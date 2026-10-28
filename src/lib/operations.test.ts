@@ -117,6 +117,44 @@ test("createGroup defaults null dates", () => {
   assert.equal(group.endDate, null)
 })
 
+test("createGroup roster links friend profileId on member", () => {
+  const { store, profile: opener } = baseStore()
+  const { store: s1, profile: friend } = createProfile(store, "Buddy")
+  const withUser = {
+    ...s1,
+    profiles: s1.profiles.map((item) =>
+      item.id === friend.id ? { ...item, username: "buddy" } : item
+    ),
+  }
+  const { group } = createGroup(withUser, {
+    name: "With friend",
+    roster: [{ name: friend.name, profileId: friend.id }],
+    createdByProfileId: opener.id,
+  })
+  const buddySeat = group.members.find((item) => item.profileId === friend.id)
+  assert.ok(buddySeat)
+  assert.equal(buddySeat?.name, friend.name)
+  const openerSeat = group.members.find((item) => item.profileId === opener.id)
+  assert.ok(openerSeat)
+})
+
+test("createGroup roster dedupes duplicate profileId", () => {
+  const { store, profile: opener } = baseStore()
+  const { store: s1, profile: friend } = createProfile(store, "Buddy")
+  const { group } = createGroup(s1, {
+    name: "Deduped",
+    roster: [
+      { name: friend.name, profileId: friend.id },
+      { name: friend.name, profileId: friend.id },
+    ],
+    createdByProfileId: opener.id,
+  })
+  assert.equal(
+    group.members.filter((item) => item.profileId === friend.id).length,
+    1
+  )
+})
+
 test("deleteExpense rejects non-author non-opener", () => {
   const { store, profile } = baseStore()
   let s = store

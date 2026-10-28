@@ -74,6 +74,75 @@ export function createProfile(store: Store, rawName: string) {
   }
 }
 
+export type RosterEntry = { name: string; profileId?: string | null }
+
+function buildCreateGroupMembers(
+  store: Store,
+  profile: Profile,
+  input: { roster?: RosterEntry[]; memberNames?: string[] }
+): Array<{ name: string; profileId: string | null }> {
+  type Draft = { name: string; profileId: string | null }
+  let drafts: Draft[] = []
+
+  if (input.roster && input.roster.length > 0) {
+    for (const row of input.roster) {
+      const rowName = cleanName(row.name, 40)
+      if (!rowName) continue
+      let profileId = row.profileId?.trim() || null
+      if (profileId) {
+        const linked = store.profiles.find((item) => item.id === profileId)
+        if (!linked) profileId = null
+      }
+      drafts.push({ name: rowName, profileId })
+    }
+  } else {
+    drafts = (input.memberNames ?? [])
+      .map((item) => cleanName(item, 40))
+      .filter((item): item is string => Boolean(item))
+      .map((name) => ({ name, profileId: null as string | null }))
+  }
+
+  const hasCreator = drafts.some(
+    (item) =>
+      item.profileId === profile.id ||
+      item.name.toLowerCase() === profile.name.toLowerCase()
+  )
+  if (!hasCreator) {
+    drafts.unshift({ name: profile.name, profileId: profile.id })
+  } else {
+    drafts = drafts.map((item) =>
+      item.name.toLowerCase() === profile.name.toLowerCase()
+        ? { ...item, profileId: profile.id }
+        : item
+    )
+  }
+
+  const seenProfileIds = new Set<string>()
+  const seenNames = new Set<string>()
+  const unique: Draft[] = []
+  for (const item of drafts) {
+    if (item.profileId) {
+      if (item.profileId === profile.id) {
+        if (!seenNames.has(item.name.toLowerCase())) {
+          seenNames.add(item.name.toLowerCase())
+          seenProfileIds.add(profile.id)
+          unique.push(item)
+        }
+        continue
+      }
+      if (seenProfileIds.has(item.profileId)) continue
+      seenProfileIds.add(item.profileId)
+      seenNames.add(item.name.toLowerCase())
+      unique.push(item)
+      continue
+    }
+    if (seenNames.has(item.name.toLowerCase())) continue
+    seenNames.add(item.name.toLowerCase())
+    unique.push(item)
+  }
+  return unique
+}
+
 export function createGroup(
   store: Store,
   input: {
@@ -81,7 +150,8 @@ export function createGroup(
     currency?: string
     startDate?: string | null
     endDate?: string | null
-    memberNames: string[]
+    memberNames?: string[]
+    roster?: RosterEntry[]
     createdByProfileId: string
   }
 ) {
@@ -94,20 +164,10 @@ export function createGroup(
   const currency = (input.currency ?? "INR").toUpperCase()
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error("Currency must be a 3-letter code.")
 
-  const names = input.memberNames
-    .map((item) => cleanName(item, 40))
-    .filter((item): item is string => Boolean(item))
-
-  if (!names.some((item) => item.toLowerCase() === profile.name.toLowerCase())) {
-    names.unshift(profile.name)
-  }
-
-  const unique: string[] = []
-  for (const item of names) {
-    if (!unique.some((existing) => existing.toLowerCase() === item.toLowerCase())) {
-      unique.push(item)
-    }
-  }
+  const unique = buildCreateGroupMembers(store, profile, {
+    roster: input.roster,
+    memberNames: input.memberNames,
+  })
   if (unique.length < 2) throw new Error("A trip needs at least two names.")
 
   let code = joinCode()
@@ -130,11 +190,10 @@ export function createGroup(
     endDate,
     createdByProfileId: profile.id,
     createdAt: nowIso(),
-    members: unique.map((memberName) => ({
+    members: unique.map((member) => ({
       id: uid("m"),
-      name: memberName,
-      profileId:
-        memberName.toLowerCase() === profile.name.toLowerCase() ? profile.id : null,
+      name: member.name,
+      profileId: member.profileId,
       coveredByMemberId: null,
     })),
     expenses: [],
@@ -788,7 +847,7 @@ export function addContact(
   if (!target && store.profiles.length > 0) {
     throw new Error("Profile not found.")
   }
-  const source = input.source ?? (input.query ? "search" : "search")
+  const source = input.source ?? (input.query ? "friend" : "friend")
   const next = upsertContactInStore(store, {
     ownerProfileId: ownerId,
     targetProfileId: targetId,

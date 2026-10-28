@@ -118,6 +118,25 @@ export function syncTripContacts(store: Store, groupId: string): Store {
   return next
 }
 
+export function assertRosterProfileIdsAreFriends(
+  store: Store,
+  ownerProfileId: string,
+  roster: Array<{ profileId?: string | null }>
+) {
+  const friendIds = new Set(
+    storeContacts(store)
+      .filter((item) => item.ownerProfileId === ownerProfileId)
+      .map((item) => item.targetProfileId)
+  )
+  for (const row of roster) {
+    const id = row.profileId?.trim()
+    if (!id || id === ownerProfileId) continue
+    if (!friendIds.has(id)) {
+      throw new Error("Add them as a friend first.")
+    }
+  }
+}
+
 export function removeContactFromStore(
   store: Store,
   ownerProfileId: string,

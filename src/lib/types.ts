@@ -72,7 +72,7 @@ export type TripInvite = {
 
 export type JoinRequestStatus = "pending" | "approved" | "rejected"
 
-export type ContactSource = "search" | "trip" | "invite"
+export type ContactSource = "search" | "friend" | "trip" | "invite"
 
 export type Contact = {
   id: string

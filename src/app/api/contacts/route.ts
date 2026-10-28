@@ -91,6 +91,7 @@ export async function POST(request: Request) {
           ownerProfileId: sessionId,
           targetProfileId,
           query: body.query,
+          source: "friend",
         })
       },
       { scope: { kind: "createTrip" } }

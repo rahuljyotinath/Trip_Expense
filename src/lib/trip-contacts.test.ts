@@ -8,7 +8,11 @@ import {
   removeContact,
   sendTripInvite,
 } from "./operations"
-import { findProfileForContactSearch, listContactsForProfile } from "./trip-contacts"
+import {
+  assertRosterProfileIdsAreFriends,
+  findProfileForContactSearch,
+  listContactsForProfile,
+} from "./trip-contacts"
 import { emptyStore } from "./types"
 
 test("findProfileForContactSearch exact username email phone", () => {
@@ -122,4 +126,19 @@ test("removeContact", () => {
   })
   assert.equal(contacts.length, 0)
   assert.equal((s3.contacts ?? []).length, 0)
+})
+
+test("assertRosterProfileIdsAreFriends rejects stranger profileId", () => {
+  const { store, profile: a } = createProfile(emptyStore(), "A")
+  const { store: s1, profile: b } = createProfile(store, "B")
+  assert.throws(() =>
+    assertRosterProfileIdsAreFriends(s1, a.id, [{ profileId: b.id }])
+  )
+  const { store: s2 } = addContact(s1, {
+    ownerProfileId: a.id,
+    targetProfileId: b.id,
+  })
+  assert.doesNotThrow(() =>
+    assertRosterProfileIdsAreFriends(s2, a.id, [{ profileId: b.id }])
+  )
 })
