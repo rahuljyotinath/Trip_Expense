@@ -191,6 +191,7 @@ export function WaybillApp() {
     let cancelled = false
     ;(async () => {
       try {
+        setError(null)
         const [nextHealth, session] = await Promise.all([
           loadHealth(),
           fetchSessionProfile(),
@@ -232,17 +233,26 @@ export function WaybillApp() {
         setProfile(session)
         syncProfileToLocalStore(session)
         setScreen("home")
-        const [list, invites, contacts] = await Promise.all([
-          fetchMyGroups(session.id),
-          fetchPendingTripInvites().catch(() => [] as Awaited<
-            ReturnType<typeof fetchPendingTripInvites>
-          >),
-          fetchKnownContacts().catch(() => [] as KnownContact[]),
-        ])
-        if (cancelled) return
-        setGroups(list)
-        setPendingInvites(invites)
-        setKnownContacts(contacts)
+        try {
+          const [list, invites, contacts] = await Promise.all([
+            fetchMyGroups(session.id),
+            fetchPendingTripInvites().catch(() => [] as Awaited<
+              ReturnType<typeof fetchPendingTripInvites>
+            >),
+            fetchKnownContacts().catch(() => [] as KnownContact[]),
+          ])
+          if (cancelled) return
+          setGroups(list)
+          setPendingInvites(invites)
+          setKnownContacts(contacts)
+        } catch (err) {
+          if (!cancelled) {
+            setGroups([])
+            setPendingInvites([])
+            setKnownContacts([])
+            setError(errorText(err))
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setError(errorText(err))

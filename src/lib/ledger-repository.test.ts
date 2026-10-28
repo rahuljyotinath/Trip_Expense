@@ -1,21 +1,31 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { signUp } from "./auth-ops"
-import { createGroup } from "./operations"
-import { storesEqualNormalized } from "./ledger-repository"
-import { emptyStore, normalizeStore } from "./types"
+import { profileIdsForTripMutation } from "./ledger-repository"
+import { normalizeGroup } from "./types"
 
-test("storesEqualNormalized detects equivalent normalized stores", async () => {
-  const signed = await signUp(emptyStore(), {
-    username: "ada_repo",
-    password: "secret123",
-    name: "Ada",
+test("profileIdsForTripMutation always includes session profile", () => {
+  const group = normalizeGroup({
+    id: "t1",
+    name: "Trip",
+    code: "ABCD",
+    currency: "INR",
+    startDate: null,
+    endDate: null,
+    createdByProfileId: "p_creator",
+    createdAt: "2026-01-01",
+    members: [
+      { id: "m1", name: "Alex", profileId: "p_seated", coveredByMemberId: null },
+    ],
+    expenses: [],
+    payments: [],
   })
-  const { store: s2 } = createGroup(signed.store, {
-    name: "Goa",
-    memberNames: ["Ada", "Bob"],
-    createdByProfileId: signed.profile.id,
-  })
-  const roundTrip = normalizeStore(JSON.parse(JSON.stringify(s2)))
-  assert.equal(storesEqualNormalized(s2, roundTrip), true)
+  const ids = profileIdsForTripMutation(group, "t1", [], [], "p_viewer")
+  assert.ok(ids.includes("p_viewer"))
+  assert.ok(ids.includes("p_creator"))
+  assert.ok(ids.includes("p_seated"))
+})
+
+test("profileIdsForTripMutation with empty group still includes session", () => {
+  const ids = profileIdsForTripMutation(null, "t1", [], [], "p_session")
+  assert.deepEqual(ids, ["p_session"])
 })

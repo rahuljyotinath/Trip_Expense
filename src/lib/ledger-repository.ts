@@ -345,13 +345,15 @@ export async function loadTripHeadersByIdsRelational(
   `
 }
 
-function profileIdsForTripMutation(
+export function profileIdsForTripMutation(
   group: Group | null,
   tripId: string,
   joinRequests: JoinRequest[],
-  tripInvites: TripInvite[]
+  tripInvites: TripInvite[],
+  sessionProfileId?: string | null
 ): string[] {
   const ids = new Set<string>()
+  if (sessionProfileId?.trim()) ids.add(sessionProfileId.trim())
   if (group) {
     if (group.createdByProfileId) ids.add(group.createdByProfileId)
     for (const adminId of group.adminProfileIds ?? []) {
@@ -513,8 +515,10 @@ export async function loadFullStoreRelational(sql: Sql): Promise<RelationalLoadS
 
 export async function loadStoreForMutationRelational(
   sql: Sql,
-  scope: MutationScope
+  scope: MutationScope,
+  sessionProfileId: string | null = null
 ): Promise<RelationalLoadState> {
+  const sessionId = sessionProfileId?.trim() || null
   const [joinRequests, tripInvites, contacts, metaVersion] = await Promise.all([
     loadJoinRequests(sql),
     loadTripInvites(sql),
@@ -546,8 +550,11 @@ export async function loadStoreForMutationRelational(
         if (header) tripVersions.set(g.id, Number(header.version))
       })
     )
+    const profiles = sessionId
+      ? await loadProfilesByIdsRelational(sql, [sessionId])
+      : []
     return {
-      store: normalizeStore({ profiles: [], groups, ...meta }),
+      store: normalizeStore({ profiles, groups, ...meta }),
       tripVersions,
       metaVersion,
     }
@@ -563,7 +570,8 @@ export async function loadStoreForMutationRelational(
     group,
     scope.tripId,
     joinRequests,
-    tripInvites
+    tripInvites,
+    sessionId
   )
   const profiles = await loadProfilesByIdsRelational(sql, profileIds)
   return {

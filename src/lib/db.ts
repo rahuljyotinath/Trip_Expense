@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
 import { normalizeUsername } from "./auth-ops"
+import { sessionProfileId } from "./session"
 import { isRelationalLedger } from "./ledger-backend"
 import { normalizeInviteEmail, normalizeInvitePhone } from "./trip-invites"
 import { findProfileForContactSearch } from "./trip-contacts"
@@ -662,13 +663,28 @@ async function loadForMutation(
   if (!(await isRelationalLedger(sql))) {
     return loadBlob(force)
   }
+  const sessionId = await sessionProfileId()
   const relational = await loadStoreForMutationRelational(
     sql,
-    scope ?? { kind: "createTrip" }
+    scope ?? { kind: "createTrip" },
+    sessionId
   )
+  let store = relational.store
+  if (sessionId) {
+    const hasSession = store.profiles.some((item) => item.id === sessionId)
+    if (!hasSession) {
+      const sessionProfile = await readProfileForSession(sessionId)
+      if (sessionProfile) {
+        store = normalizeStore({
+          ...store,
+          profiles: [...store.profiles, sessionProfile],
+        })
+      }
+    }
+  }
   return {
-    store: relational.store,
-    relational,
+    store,
+    relational: { ...relational, store },
     version: relational.metaVersion,
   }
 }

@@ -86,7 +86,11 @@ export function isNetworkError(error: unknown) {
 export function isRetryableSyncError(error: unknown) {
   if (isNetworkError(error)) return true
   const message = error instanceof Error ? error.message : String(error)
-  return /unconfigured|sign in again/i.test(message)
+  if (/unconfigured/i.test(message)) return true
+  if (/sign in again|profile not found|forbidden|version conflict|not on the ledger/i.test(message)) {
+    return false
+  }
+  return false
 }
 
 export function createOutbox(storage: OutboxStorage) {
