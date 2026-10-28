@@ -14,6 +14,10 @@ import { Button } from "@/components/ui/button"
 import { formatTripDates } from "@/components/trip/trip-format"
 import { tripDeskScrollClass } from "@/components/trip/trip-desk-layout"
 import {
+  TripMobileActionBar,
+  TripMobileBottomNav,
+} from "@/components/trip/trip-mobile-nav"
+import {
   drainGroupOutbox,
   outboxPendingCount,
   subscribeOutbox,
@@ -126,7 +130,7 @@ export function TripSummaryStrip({
           }
 
   return (
-    <div className="rounded-xl border bg-card/50 px-3 py-2 lg:px-4 lg:py-2.5">
+    <div className="rounded-xl border bg-card/50 px-3 py-2 max-lg:-mx-0 max-lg:rounded-2xl max-lg:shadow-sm lg:px-4 lg:py-2.5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-2">
         <div>
           <p className="text-[10px] tracking-wide text-muted-foreground uppercase lg:text-[11px]">
@@ -206,7 +210,7 @@ export function TripNavTabs({
       : "text-foreground/60 hover:bg-background/80 hover:text-foreground"
 
   return (
-    <div className="flex h-auto shrink-0 flex-wrap gap-1 rounded-lg border bg-muted p-[3px]">
+    <div className="hidden h-auto shrink-0 flex-wrap gap-1 rounded-lg border bg-muted p-[3px] lg:flex">
       {(["settle", "ledger", "people"] as const).map((tab) => (
         <Link
           key={tab}
@@ -251,6 +255,7 @@ export function TripPageChrome({
   onImportCsvError,
   onPaymentOpen,
   onAddExpense,
+  showMobileActions = true,
   children,
 }: {
   group: Group
@@ -269,17 +274,22 @@ export function TripPageChrome({
   onImportCsvError: (message: string) => void
   onPaymentOpen: () => void
   onAddExpense: () => void
+  /** Fixed paid-back / add-spend bar on small screens. */
+  showMobileActions?: boolean
   children: ReactNode
 }) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const tripDates = formatTripDates(group)
+  const scrollClass = showMobileActions
+    ? tripDeskScrollClass
+    : `${tripDeskScrollClass} max-lg:!pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))]`
 
   return (
-    <div className={`flex flex-col gap-3 lg:gap-3 ${tripDeskScrollClass}`}>
+    <div className={`flex flex-col gap-3 lg:gap-3 ${scrollClass}`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <h2 className="font-heading text-2xl tracking-tight sm:text-3xl lg:text-2xl">
+            <h2 className="font-heading text-xl tracking-tight sm:text-3xl lg:text-2xl">
               {group.name}
             </h2>
             {tripDates ? (
@@ -295,7 +305,7 @@ export function TripPageChrome({
                 {" · "}
                 <Link
                   href={`${tripPath}/settings`}
-                  className="underline underline-offset-2 hover:text-foreground"
+                  className="hidden underline underline-offset-2 hover:text-foreground lg:inline"
                 >
                   Trip settings
                 </Link>
@@ -304,7 +314,7 @@ export function TripPageChrome({
           </p>
           <TripSyncBanner groupId={group.id} fromCache={fromCache} />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:gap-2">
+        <div className="hidden shrink-0 flex-wrap items-center gap-1.5 lg:flex lg:gap-2">
           <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-1.5">
             <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
               Join code
@@ -369,6 +379,25 @@ export function TripPageChrome({
             </>
           ) : null}
         </div>
+        <div className="flex flex-wrap items-center gap-2 lg:hidden">
+          <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-2">
+            <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+              Code
+            </span>
+            <span className="font-mono text-sm font-semibold tracking-widest tabular-nums">
+              {group.code}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto shrink-0"
+              onClick={() => onCopy(group.code)}
+              aria-label={copied ? "Copied join code" : "Copy join code"}
+            >
+              {copied ? <Check /> : <Link2 />}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <TripSummaryStrip group={group} seatId={seatId} />
@@ -379,6 +408,20 @@ export function TripPageChrome({
         showSettings={isTripAdmin}
       />
       {children}
+      {profile && showMobileActions ? (
+        <TripMobileActionBar
+          canWrite={canWrite}
+          busy={busy}
+          onPaymentOpen={onPaymentOpen}
+          onAddExpense={onAddExpense}
+        />
+      ) : null}
+      <TripMobileBottomNav
+        tripPath={tripPath}
+        active={activeTab}
+        tabHref={tabHref}
+        showSettings={isTripAdmin}
+      />
     </div>
   )
 }

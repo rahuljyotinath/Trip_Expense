@@ -18,8 +18,11 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { tripSubpageScrollPad } from "@/components/trip/trip-desk-layout"
+import { TripMobileBottomNav } from "@/components/trip/trip-mobile-nav"
 import { logoutUser } from "@/lib/client-api"
 import { isTripAdmin } from "@/lib/trip-invites"
+import { cn } from "@/lib/utils"
 import type { Group, PublicProfile } from "@/lib/types"
 import { AlertCircle } from "lucide-react"
 
@@ -73,6 +76,10 @@ export function TripSettingsPage() {
     )
   }
 
+  function tabHref(tab: "settle" | "ledger" | "people") {
+    return tab === "ledger" ? tripPath : `${tripPath}?tab=${tab}`
+  }
+
   if (!profile || !isTripAdmin(group, profile.id)) {
     return (
       <Shell health={health} profile={profile} compact onHome={() => router.push(tripPath)}>
@@ -96,7 +103,7 @@ export function TripSettingsPage() {
       onHome={() => router.push(tripPath)}
       onLogout={() => void onLogout()}
     >
-      <div className="mx-auto max-w-2xl space-y-6 pb-8">
+      <div className={cn("mx-auto max-w-2xl space-y-6 pb-8", tripSubpageScrollPad)}>
         <div>
           <Link href={tripPath} className="text-sm text-muted-foreground underline underline-offset-4">
             ← Back to trip
@@ -152,6 +159,12 @@ export function TripSettingsPage() {
           }}
         />
       </div>
+      <TripMobileBottomNav
+        tripPath={tripPath}
+        active="settings"
+        tabHref={tabHref}
+        showSettings
+      />
     </Shell>
   )
 }

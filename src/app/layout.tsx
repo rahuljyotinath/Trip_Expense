@@ -22,6 +22,18 @@ export const metadata: Metadata = {
   title: "Trip Expenses Balancer",
   description:
     "Sign in, join your trip, split bills privately with your group.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Trips",
+  },
+}
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+  themeColor: "#f5f0e8",
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

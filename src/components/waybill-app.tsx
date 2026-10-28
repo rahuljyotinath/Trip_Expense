@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Banknote,
   Check,
+  ChevronLeft,
   ChevronDown,
   Compass,
   Download,
@@ -581,7 +582,7 @@ export function Shell({
     <div
       className={
         compact
-          ? "relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-4 sm:px-5 lg:py-5"
+          ? "relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-4 sm:px-5 lg:py-5"
           : "relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10"
       }
     >
@@ -591,20 +592,26 @@ export function Shell({
       <header
         className={
           compact
-            ? "relative mb-3 flex shrink-0 items-center justify-between gap-3 border-b pb-3"
+            ? "sticky top-0 z-30 -mx-4 mb-2 flex shrink-0 items-center justify-between gap-2 border-b bg-background/95 px-4 pb-2 backdrop-blur-md sm:-mx-5 sm:px-5 lg:relative lg:mx-0 lg:mb-3 lg:bg-transparent lg:px-0 lg:backdrop-blur-none"
             : "relative mb-8 flex items-start justify-between gap-4"
         }
       >
         <button
           type="button"
           onClick={onHome}
-          className="rounded-lg text-left transition-opacity hover:opacity-90 disabled:cursor-default"
+          className="flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg text-left transition-opacity hover:opacity-90 disabled:cursor-default touch-manipulation"
           disabled={!onHome}
         >
           {compact ? (
-            <span className="font-heading text-lg tracking-tight sm:text-xl">
-              Trip Expenses Balancer
-            </span>
+            <>
+              {onHome ? (
+                <ChevronLeft className="size-5 shrink-0 text-muted-foreground lg:hidden" aria-hidden />
+              ) : null}
+              <span className="truncate font-heading text-base tracking-tight sm:text-lg lg:text-xl">
+                <span className="lg:hidden">Trips</span>
+                <span className="hidden lg:inline">Trip Expenses Balancer</span>
+              </span>
+            </>
           ) : (
             <>
               <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
@@ -620,22 +627,30 @@ export function Shell({
             </>
           )}
         </button>
-        <div className="text-right text-sm">
+        <div className="shrink-0 text-right text-sm">
           {profile ? (
             <>
-              <p className="font-medium">{profile.name}</p>
-              <p className="text-xs text-muted-foreground">@{profile.username}</p>
+              <p className="max-w-[7rem] truncate font-medium sm:max-w-none">{profile.name}</p>
+              <p className="hidden text-xs text-muted-foreground sm:block">@{profile.username}</p>
+              <div className="hidden gap-2 sm:flex sm:items-center sm:justify-end">
+                <Link
+                  href="/profile/setup"
+                  className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >
+                  Profile
+                </Link>
+                {onLogout ? (
+                  <Button variant="link" className="h-auto px-0 text-xs" onClick={onLogout}>
+                    Sign out
+                  </Button>
+                ) : null}
+              </div>
               <Link
                 href="/profile/setup"
-                className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                className="text-[11px] text-muted-foreground underline underline-offset-4 sm:hidden"
               >
                 Profile
               </Link>
-              {onLogout ? (
-                <Button variant="link" className="h-auto px-0 text-xs" onClick={onLogout}>
-                  Sign out
-                </Button>
-              ) : null}
             </>
           ) : (
             <p className="text-muted-foreground">Not signed in</p>
