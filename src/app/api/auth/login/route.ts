@@ -1,6 +1,12 @@
 import { logIn } from "@/lib/auth-ops"
-import { readProfilesForAuth, storageMode } from "@/lib/db"
-import { fail, json, readBody } from "@/lib/http"
+import {
+  isPostgresPasswordAuthError,
+  readProfilesForAuth,
+  resetPostgresClient,
+  storageMode,
+} from "@/lib/db"
+import { POSTGRES_DEPLOY_AUTH_MESSAGE } from "@/lib/postgres-connect"
+import { fail, failServiceUnavailable, json, readBody } from "@/lib/http"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
 import { connection } from "next/server"
@@ -12,7 +18,16 @@ export async function POST(request: Request) {
   }
   try {
     const body = await readBody<{ username?: string; password?: string }>(request)
-    const store = await readProfilesForAuth()
+    let store
+    try {
+      store = await readProfilesForAuth()
+    } catch (error) {
+      if (isPostgresPasswordAuthError(error)) {
+        resetPostgresClient()
+        return failServiceUnavailable(POSTGRES_DEPLOY_AUTH_MESSAGE)
+      }
+      throw error
+    }
     const result = logIn(store, {
       username: body.username ?? "",
       password: body.password ?? "",

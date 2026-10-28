@@ -8,6 +8,10 @@ export function fail(error: unknown, fallback = "Something broke.") {
   return json({ error: message }, status)
 }
 
+export function failServiceUnavailable(message: string) {
+  return json({ error: message }, 503)
+}
+
 export async function readBody<T>(request: Request) {
   return (await request.json()) as T
 }

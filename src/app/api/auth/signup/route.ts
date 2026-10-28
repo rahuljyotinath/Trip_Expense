@@ -1,6 +1,12 @@
 import { signUp } from "@/lib/auth-ops"
-import { storageMode, updateStore } from "@/lib/db"
-import { fail, json, readBody } from "@/lib/http"
+import {
+  isPostgresPasswordAuthError,
+  resetPostgresClient,
+  storageMode,
+  updateStore,
+} from "@/lib/db"
+import { POSTGRES_DEPLOY_AUTH_MESSAGE } from "@/lib/postgres-connect"
+import { fail, failServiceUnavailable, json, readBody } from "@/lib/http"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
 import { connection } from "next/server"
@@ -28,6 +34,10 @@ export async function POST(request: Request) {
     await setSessionProfile(result.profile.id)
     return json({ profile: publicProfile(result.profile) })
   } catch (error) {
+    if (isPostgresPasswordAuthError(error)) {
+      resetPostgresClient()
+      return failServiceUnavailable(POSTGRES_DEPLOY_AUTH_MESSAGE)
+    }
     return fail(error)
   }
 }

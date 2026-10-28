@@ -31,6 +31,7 @@ import {
   type Store,
   type TripInvite,
 } from "./types"
+import { isPostgresPasswordAuthError, postgresJsOptions } from "./postgres-connect"
 import { postgresConfig, storageMode } from "./storage-mode"
 import { storesEqual } from "./store-compare"
 
@@ -70,19 +71,26 @@ function enqueueWrite<T>(job: () => Promise<T>) {
   return run
 }
 
+export function resetPostgresClient() {
+  const client = postgresClient
+  postgresClient = null
+  if (client) {
+    void client.end({ timeout: 0 }).catch(() => {
+      /* ignore */
+    })
+  }
+}
+
 export function getSql(): Sql {
   const url = postgresConfig()
   if (!url) throw new Error("Postgres is not configured.")
   if (!postgresClient) {
-    postgresClient = postgres(url, {
-      max: Number(process.env.POSTGRES_POOL_MAX || 4),
-      prepare: false,
-      connect_timeout: 10,
-      idle_timeout: 60,
-    })
+    postgresClient = postgres(url, postgresJsOptions(url))
   }
   return postgresClient
 }
+
+export { isPostgresPasswordAuthError } from "./postgres-connect"
 
 function isVersionConflict(error: unknown) {
   return (
