@@ -13,6 +13,7 @@ import {
   pendingTripInviteBanner,
   respondTripInvite,
 } from "@/lib/client-api"
+import { PageLoadFallback } from "@/components/page-load-fallback"
 import { AlertCircle } from "lucide-react"
 
 function errorText(error: unknown) {
@@ -81,11 +82,7 @@ export function TripPage() {
   }
 
   if (loading) {
-    return (
-      <Shell health={health} profile={profile} compact>
-        <p className="text-sm text-muted-foreground">Loading trip…</p>
-      </Shell>
-    )
+    return <PageLoadFallback message="Loading trip…" compact />
   }
 
   if (loadError || !group) {

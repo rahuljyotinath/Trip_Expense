@@ -25,6 +25,7 @@ import { logoutUser } from "@/lib/client-api"
 import { isTripAdmin } from "@/lib/trip-invites"
 import { cn } from "@/lib/utils"
 import type { Group, PublicProfile } from "@/lib/types"
+import { PageLoadFallback } from "@/components/page-load-fallback"
 import { AlertCircle } from "lucide-react"
 
 export function TripSettingsPage() {
@@ -55,11 +56,7 @@ export function TripSettingsPage() {
   }
 
   if (loading) {
-    return (
-      <Shell health={health} profile={profile} compact>
-        <p className="text-sm text-muted-foreground">Loading trip settings…</p>
-      </Shell>
-    )
+    return <PageLoadFallback message="Loading settings…" compact />
   }
 
   if (loadError || !group) {

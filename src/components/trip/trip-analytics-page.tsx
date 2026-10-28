@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { logoutUser } from "@/lib/client-api"
 import { isTripAdmin } from "@/lib/trip-invites"
 import type { Group } from "@/lib/types"
+import { PageLoadFallback } from "@/components/page-load-fallback"
 import { AlertCircle } from "lucide-react"
 
 const ExpenseDialog = dynamic(
@@ -84,11 +85,7 @@ export function TripAnalyticsPage() {
   }
 
   if (loading) {
-    return (
-      <Shell health={health} profile={profile} compact>
-        <p className="text-sm text-muted-foreground">Loading analytics…</p>
-      </Shell>
-    )
+    return <PageLoadFallback message="Loading analytics…" compact />
   }
 
   if (loadError || !group) {

@@ -1,9 +1,15 @@
+import dynamic from "next/dynamic"
 import { Suspense } from "react"
-import { LoginPage } from "@/components/profile/login-page"
+import { PageLoadFallback } from "@/components/page-load-fallback"
+
+const LoginPage = dynamic(
+  () => import("@/components/profile/login-page").then((m) => m.LoginPage),
+  { loading: () => <PageLoadFallback message="Loading sign in…" /> }
+)
 
 export default function Page() {
   return (
-    <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading…</p>}>
+    <Suspense fallback={<PageLoadFallback message="Loading sign in…" />}>
       <LoginPage />
     </Suspense>
   )
