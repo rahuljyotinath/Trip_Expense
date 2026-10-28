@@ -51,7 +51,7 @@ import {
   TripPageChrome,
   type TripTabId,
 } from "@/components/trip/trip-page-chrome"
-import { tripDeskScrollClass, tripTabPanelClass } from "@/components/trip/trip-desk-layout"
+import { tripTabPanelClass } from "@/components/trip/trip-desk-layout"
 import { Textarea } from "@/components/ui/textarea"
 import {
   claimSeat,
@@ -576,7 +576,7 @@ export function Shell({
     <div
       className={
         compact
-          ? "relative mx-auto flex h-dvh max-h-dvh w-full max-w-6xl flex-col overflow-hidden px-4 py-4 sm:px-5 lg:py-5"
+          ? "relative mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-4 sm:px-5 lg:py-5"
           : "relative mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 sm:py-10"
       }
     >
@@ -652,11 +652,7 @@ export function Shell({
         </Alert>
       ) : null}
       <main
-        className={
-          compact
-            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-            : "flex-1"
-        }
+        className={compact ? "flex flex-1 flex-col" : "flex-1"}
       >
         {children}
       </main>
@@ -1334,7 +1330,7 @@ export function TripDesk({
   }, [group.id])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex flex-1 flex-col">
       <TripPageChrome
         group={group}
         profile={profile}

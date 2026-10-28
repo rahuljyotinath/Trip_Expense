@@ -1,6 +1,5 @@
-/** Single scrollport below app shell: title, summary, tabs, and tab body. */
-export const tripDeskScrollClass =
-  "min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6"
+/** Trip chrome + tabs; page scrolls on the viewport (no inner ledger scrollport). */
+export const tripDeskScrollClass = "flex flex-col pb-6"
 
-/** Tab panel layout (content height grows inside tripDeskScrollClass). */
+/** Tab panel layout (content grows with the page). */
 export const tripTabPanelClass = "flex flex-col pt-3 outline-none"

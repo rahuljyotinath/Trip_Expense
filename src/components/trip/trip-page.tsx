@@ -99,7 +99,7 @@ export function TripPage() {
       onHome={() => router.push("/")}
       onLogout={profile ? () => void onLogout() : undefined}
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col">
         {deskError ? (
           <Alert variant="destructive" className="mb-4 shrink-0">
             <AlertCircle />
