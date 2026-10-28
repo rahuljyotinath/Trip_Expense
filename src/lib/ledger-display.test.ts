@@ -16,6 +16,8 @@ import {
   expenseRowMeta,
   ledgerDayItems,
   expenseViewerSecondAmount,
+  paidBackRowDescription,
+  paidBackRowLabels,
   paymentViewerTone,
   personalExpenditureForMember,
 } from "./ledger-display"
@@ -429,6 +431,45 @@ test("paymentViewerTone is received / paid-back / none", () => {
   assert.equal(paymentViewerTone(payment, "m1"), "paid-back")
   assert.equal(paymentViewerTone(payment, "m3"), "none")
   assert.equal(paymentViewerTone(payment, null), "none")
+})
+
+test("paidBackRowLabels uses You for viewer payer or recipient", () => {
+  const g = group({
+    members: [
+      { id: "m1", name: "Rahul", profileId: "p1", coveredByMemberId: null },
+      { id: "m2", name: "Seemon", profileId: null, coveredByMemberId: null },
+    ],
+    payments: [
+      {
+        id: "pay1",
+        date: "2026-01-02",
+        amount: 20,
+        fromMemberId: "m1",
+        toMemberId: "m2",
+        createdByProfileId: "p1",
+        createdAt: "2026-01-02T12:00:00.000Z",
+        voidedAt: null,
+        voidedByProfileId: null,
+      },
+    ],
+  })
+  const payment = g.payments[0]!
+  assert.deepEqual(paidBackRowLabels(g, payment, "m1"), {
+    fromLabel: "You",
+    toLabel: "Seemon",
+  })
+  assert.deepEqual(paidBackRowLabels(g, payment, "m2"), {
+    fromLabel: "Rahul",
+    toLabel: "You",
+  })
+  assert.deepEqual(paidBackRowLabels(g, payment, null), {
+    fromLabel: "Rahul",
+    toLabel: "Seemon",
+  })
+  assert.equal(
+    paidBackRowDescription(g, payment, "m1"),
+    "paid back by You to Seemon"
+  )
 })
 
 test("ledgerDayItems interleaves expenses and payments oldest first", () => {

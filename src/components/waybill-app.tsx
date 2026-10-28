@@ -85,6 +85,7 @@ import {
   ledgerDayItems,
   ledgerDaysForViewer,
   ledgerPersonalExpensesForViewer,
+  paidBackRowLabels,
   paymentViewerTone,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
@@ -1435,6 +1436,11 @@ export function TripDesk({
                   profile &&
                   (payment.createdByProfileId === profile.id ||
                     group.createdByProfileId === profile.id)
+                const paidBack = paidBackRowLabels(
+                  group,
+                  payment,
+                  seat?.id ?? null
+                )
                 return (
                   <div
                     key={payment.id}
@@ -1442,9 +1448,8 @@ export function TripDesk({
                   >
                     <p className={crossed ? "text-muted-foreground line-through" : ""}>
                       {formatDay(payment.date)} ·{" "}
-                      {memberName(group, payment.fromMemberId)} →{" "}
-                      {memberName(group, payment.toMemberId)} ·{" "}
-                      {formatMoney(payment.amount, group.currency)}
+                      {formatMoney(payment.amount, group.currency)} paid back by{" "}
+                      {paidBack.fromLabel} to {paidBack.toLabel}
                     </p>
                     {canEdit ? (
                       <span className="flex shrink-0 gap-0.5">
@@ -1639,6 +1644,11 @@ export function TripDesk({
                               (payment.createdByProfileId === profile.id ||
                                 group.createdByProfileId === profile.id)
                             const tone = paymentViewerTone(payment, viewerMemberId)
+                            const paidBack = paidBackRowLabels(
+                              group,
+                              payment,
+                              viewerMemberId
+                            )
                             return (
                               <div
                                 key={payment.id}
@@ -1652,8 +1662,9 @@ export function TripDesk({
                                   />
                                 ) : null}
                                 <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                                  {memberName(group, payment.fromMemberId)} →{" "}
-                                  {memberName(group, payment.toMemberId)}
+                                  {formatMoney(payment.amount, group.currency)}{" "}
+                                  paid back by {paidBack.fromLabel} to{" "}
+                                  {paidBack.toLabel}
                                 </p>
                                 <p className="shrink-0 text-sm tabular-nums">
                                   {formatMoney(payment.amount, group.currency)}
@@ -1735,7 +1746,7 @@ export function TripDesk({
                             <div
                               key={expense.id}
                               {...rowDragHandlers(expense.id)}
-                              className="flex min-h-10 items-center gap-2 px-3 py-2"
+                              className="flex min-h-9 items-center gap-2 px-3 py-1.5"
                             >
                               {canWrite ? (
                                 <GripVertical
@@ -1744,10 +1755,14 @@ export function TripDesk({
                                 />
                               ) : null}
                               <div className="min-w-0 flex-1 space-y-0.5">
-                                <p className="truncate text-sm font-medium">{expense.reason}</p>
-                                <p className="truncate text-base font-semibold leading-snug">
-                                  Paid by {rowMeta.paidByLabel}
-                                </p>
+                                <div className="flex min-w-0 items-baseline justify-between gap-2">
+                                  <p className="truncate text-sm font-medium">
+                                    {expense.reason}
+                                  </p>
+                                  <p className="shrink-0 text-sm font-semibold">
+                                    Paid by {rowMeta.paidByLabel}
+                                  </p>
+                                </div>
                                 <p className="truncate text-[11px] text-muted-foreground">
                                   Shared by {rowMeta.sharedWith}
                                 </p>

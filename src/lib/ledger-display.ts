@@ -329,3 +329,38 @@ export function expenseRowMeta(
   )
   return `Paid by ${paidByLabel} · Shared by ${sharedWith}`
 }
+
+export type PaidBackRowLabels = {
+  fromLabel: string
+  toLabel: string
+}
+
+export function paidBackRowLabels(
+  group: Group,
+  payment: Payment,
+  viewerMemberId?: string | null
+): PaidBackRowLabels {
+  const fromLabel =
+    viewerMemberId && payment.fromMemberId === viewerMemberId
+      ? "You"
+      : memberName(group, payment.fromMemberId)
+  const toLabel =
+    viewerMemberId && payment.toMemberId === viewerMemberId
+      ? "You"
+      : memberName(group, payment.toMemberId)
+  return { fromLabel, toLabel }
+}
+
+/** Prose fragment after the amount (tests and reuse). */
+export function paidBackRowDescription(
+  group: Group,
+  payment: Payment,
+  viewerMemberId?: string | null
+): string {
+  const { fromLabel, toLabel } = paidBackRowLabels(
+    group,
+    payment,
+    viewerMemberId
+  )
+  return `paid back by ${fromLabel} to ${toLabel}`
+}
