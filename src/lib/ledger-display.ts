@@ -373,3 +373,13 @@ export function formatPaidBackRowPrimary(
 ): string {
   return `${formatMoney(payment.amount, currency)} ${paidBackRowDescription(group, payment, viewerMemberId)}`
 }
+
+/** Ledger/settle row label without amount (amount lives in the right column). */
+export function formatPaidBackRowTitle(
+  group: Group,
+  payment: Payment,
+  viewerMemberId: string | null | undefined
+): string {
+  const desc = paidBackRowDescription(group, payment, viewerMemberId)
+  return desc.charAt(0).toUpperCase() + desc.slice(1)
+}

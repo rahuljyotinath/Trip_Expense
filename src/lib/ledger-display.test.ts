@@ -17,6 +17,7 @@ import {
   ledgerDayItems,
   expenseViewerSecondAmount,
   formatPaidBackRowPrimary,
+  formatPaidBackRowTitle,
   paidBackRowDescription,
   paidBackRowLabels,
   paymentViewerTone,
@@ -472,11 +473,15 @@ test("paidBackRowLabels uses You for viewer payer or recipient", () => {
     paidBackRowDescription(g, payment, "m1"),
     "paid back by You to Seemon"
   )
+  assert.equal(
+    formatPaidBackRowTitle(g, payment, "m1"),
+    "Paid back by You to Seemon"
+  )
   assert.match(
     formatPaidBackRowPrimary(g, payment, "m1", "INR"),
     /paid back by You to Seemon/
   )
-  assert.doesNotMatch(formatPaidBackRowPrimary(g, payment, "m1", "INR"), /→/)
+  assert.doesNotMatch(formatPaidBackRowTitle(g, payment, "m1"), /→/)
 })
 
 test("ledgerDayItems interleaves expenses and payments oldest first", () => {

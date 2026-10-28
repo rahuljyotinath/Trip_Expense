@@ -1448,6 +1448,11 @@ export function TripDesk({
                       dateLabel={formatDay(payment.date)}
                       crossed={crossed}
                     />
+                    <p
+                      className={`shrink-0 tabular-nums ${crossed ? "text-muted-foreground line-through" : ""}`}
+                    >
+                      {formatMoney(payment.amount, group.currency)}
+                    </p>
                     {canEdit ? (
                       <span className="flex shrink-0 gap-0.5">
                         {!crossed ? (
