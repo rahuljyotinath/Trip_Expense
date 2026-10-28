@@ -1,5 +1,10 @@
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { createSessionToken, readSessionToken, sessionCookie } from "@/lib/auth-crypto"
+
+function sessionIdFromAuthorization(value: string | null) {
+  if (!value?.startsWith("Bearer ")) return null
+  return readSessionToken(value.slice("Bearer ".length).trim())
+}
 
 export async function setSessionProfile(profileId: string) {
   const jar = await cookies()
@@ -18,6 +23,9 @@ export async function clearSession() {
 }
 
 export async function sessionProfileId() {
+  const headerList = await headers()
+  const fromBearer = sessionIdFromAuthorization(headerList.get("authorization"))
+  if (fromBearer) return fromBearer
   const jar = await cookies()
   return readSessionToken(jar.get(sessionCookie.name)?.value)
 }

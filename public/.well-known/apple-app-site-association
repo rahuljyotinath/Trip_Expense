@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.tripzy.app",
+        "paths": ["/trip/*", "/login", "/signup", "/profile/*", "/"]
+      }
+    ]
+  }
+}

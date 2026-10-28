@@ -54,6 +54,15 @@ Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/s
 
 One currency per trip (INR by default).
 
+## Mobile (PWA, iOS, Android)
+
+- **Install from browser:** PWA manifest + service worker (production build). See [docs/mobile-api.md](docs/mobile-api.md).
+- **Capacitor apps:** [apps/mobile/README.md](apps/mobile/README.md) — WebView loads your deployed Tripzy URL.
+- **Domain, deep links, store checklist:** [docs/mobile-production-domain.md](docs/mobile-production-domain.md), [docs/mobile-deeplinks.md](docs/mobile-deeplinks.md), [docs/mobile-store-checklist.md](docs/mobile-store-checklist.md).
+- **Native (future):** [docs/mobile-native-phase3.md](docs/mobile-native-phase3.md).
+
+Generate PNG home-screen icons: `npm run pwa:icons`.
+
 ## India GTM (internal)
 
 Product notes: [`docs/gtm/`](docs/gtm/).

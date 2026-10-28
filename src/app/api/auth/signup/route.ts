@@ -7,6 +7,7 @@ import {
 } from "@/lib/db"
 import { POSTGRES_DEPLOY_AUTH_MESSAGE } from "@/lib/postgres-connect"
 import { fail, failServiceUnavailable, json, readBody } from "@/lib/http"
+import { createSessionToken } from "@/lib/auth-crypto"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
 import { connection } from "next/server"
@@ -32,7 +33,10 @@ export async function POST(request: Request) {
       { scope: { kind: "createTrip" } }
     )
     await setSessionProfile(result.profile.id)
-    return json({ profile: publicProfile(result.profile) })
+    return json({
+      profile: publicProfile(result.profile),
+      sessionToken: createSessionToken(result.profile.id),
+    })
   } catch (error) {
     if (isPostgresPasswordAuthError(error)) {
       resetPostgresClient()
