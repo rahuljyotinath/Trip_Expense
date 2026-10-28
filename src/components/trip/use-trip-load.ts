@@ -22,6 +22,7 @@ import type {
   TripInvite,
 } from "@/lib/types"
 import type { PendingJoinRequestRow } from "@/lib/client-api"
+import { tripAuthReturnPath } from "@/lib/trip-invite-url"
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
@@ -66,15 +67,13 @@ export function useTripLoad(groupId: string, tripPath: string) {
         if (cancelled) return
         setHealth(nextHealth)
         if (!session?.id || !session.username) {
-          const next = joinCode
-            ? `${tripPath.split("/analytics")[0]}?join=${encodeURIComponent(joinCode)}`
-            : tripPath
+          const next = tripAuthReturnPath(tripPath, joinCode)
           router.replace(`/login?next=${encodeURIComponent(next)}`)
           return
         }
         if (profileNeedsSetup(session)) {
           router.replace(
-            `/profile/setup?next=${encodeURIComponent(tripPath)}`
+            `/profile/setup?next=${encodeURIComponent(tripAuthReturnPath(tripPath, joinCode))}`
           )
           return
         }

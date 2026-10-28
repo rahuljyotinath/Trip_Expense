@@ -2,11 +2,18 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Shell, TripDesk } from "@/components/waybill-app"
 import { useTripLoad } from "@/components/trip/use-trip-load"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { claimSeat, logoutUser } from "@/lib/client-api"
+import { Button } from "@/components/ui/button"
+import {
+  claimSeat,
+  fetchPendingTripInvites,
+  logoutUser,
+  respondTripInvite,
+  type PendingTripInvite,
+} from "@/lib/client-api"
 import { AlertCircle } from "lucide-react"
 
 function errorText(error: unknown) {
@@ -37,6 +44,26 @@ export function TripPage() {
   const [copied, setCopied] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
+  const [emailInvite, setEmailInvite] = useState<PendingTripInvite | null>(null)
+
+  useEffect(() => {
+    if (!profile || !group) {
+      setEmailInvite(null)
+      return
+    }
+    let cancelled = false
+    void fetchPendingTripInvites()
+      .then((invites) => {
+        if (cancelled) return
+        setEmailInvite(invites.find((item) => item.groupId === group.id) ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setEmailInvite(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profile, group])
 
   async function copyInvite(value: string) {
     await navigator.clipboard.writeText(value)
@@ -102,6 +129,37 @@ export function TripPage() {
             <AlertCircle />
             <AlertTitle>Hold on</AlertTitle>
             <AlertDescription>{deskError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {emailInvite ? (
+          <Alert className="mb-4 shrink-0">
+            <AlertTitle>Trip invite</AlertTitle>
+            <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                You were invited to <span className="font-medium">{emailInvite.tripName}</span>.
+                Accept to join the roster, then claim your nickname.
+              </span>
+              <Button
+                size="sm"
+                className="shrink-0"
+                disabled={busy}
+                onClick={() => {
+                  if (!emailInvite) return
+                  setBusy(true)
+                  setDeskError(null)
+                  void respondTripInvite("accept", emailInvite.id)
+                    .then((next) => {
+                      setEmailInvite(null)
+                      if (next) setGroup(next)
+                      return refreshGroup()
+                    })
+                    .catch((err) => setDeskError(errorText(err)))
+                    .finally(() => setBusy(false))
+                }}
+              >
+                Accept invite
+              </Button>
+            </AlertDescription>
           </Alert>
         ) : null}
         <TripDesk

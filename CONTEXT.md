@@ -1,6 +1,8 @@
-# Trip Expenses Balancer
+# Tripzy
 
 Shared trip ledger: roster nicknames, spends, equal splits, and cash settlement between people on a trip.
+
+**Tripzy** is the product name shown in the app (internal package name remains `waybill`).
 
 ## Privacy
 
@@ -8,6 +10,10 @@ Shared trip ledger: roster nicknames, spends, equal splits, and cash settlement 
 - Ledger data lives in **Postgres** in production — not in the git repo.
 
 ## Language
+
+**Tripzy**:
+User-facing brand for this app — trip expense splitting and settlement.
+_Avoid_: Trip Expenses Balancer (legacy name)
 
 **Trip admin**:
 The trip creator (`createdByProfileId`) or a profile listed in `adminProfileIds`. Admins edit trip details, add roster nicknames, send invites, and approve join requests on **Trip settings** (`/trip/[id]/settings`).

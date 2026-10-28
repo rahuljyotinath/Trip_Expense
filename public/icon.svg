@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Tripzy">
+  <rect width="32" height="32" rx="8" fill="#8B4519"/>
+  <path
+    d="M10 11h12M16 11v11"
+    stroke="#FAF7F2"
+    stroke-width="2.5"
+    stroke-linecap="round"
+  />
+  <path
+    d="M16 18c3 0 5.5 1.2 7 3.5"
+    stroke="#FAF7F2"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+  <circle cx="23" cy="22.5" r="2.25" fill="#3D6B4F"/>
+</svg>

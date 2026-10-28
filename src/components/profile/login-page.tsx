@@ -80,10 +80,14 @@ export function LoginPage() {
   }
 
   const signupHref = next
-    ? `/signup?next=${encodeURIComponent(safeReturnPath(next))}`
+    ? `/signup?next=${encodeURIComponent(safeReturnPath(next))}${join ? `&join=${encodeURIComponent(join)}` : ""}`
     : join
-      ? `/signup?join=${encodeURIComponent(join)}`
+      ? `/signup?join=${encodeURIComponent(join)}&next=${encodeURIComponent(`/?join=${encodeURIComponent(join)}`)}`
       : "/signup"
+
+  const joiningTrip = Boolean(
+    next?.includes("/trip/") || join
+  )
 
   return (
     <AuthChrome title="Sign in to your ledger profile">
@@ -104,7 +108,11 @@ export function LoginPage() {
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle className="font-heading text-3xl">Sign in</CardTitle>
-          <CardDescription>Username and password — no email required.</CardDescription>
+          <CardDescription>
+            {joiningTrip
+              ? "Sign in to join the trip — then claim your nickname on the roster."
+              : "Username and password — no email required."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

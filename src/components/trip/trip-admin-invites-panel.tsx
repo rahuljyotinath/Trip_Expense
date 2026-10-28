@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import type { KnownContact, PendingJoinRequestRow } from "@/lib/client-api"
 import type { Group, PublicProfile, TripInvite } from "@/lib/types"
 import { useEffect, useState } from "react"
+import { TripJoinLinkActions } from "@/components/trip/trip-join-link-actions"
 import { fetchKnownContacts } from "@/lib/client-api"
 
 export function TripAdminInvitesPanel({
@@ -59,6 +60,7 @@ export function TripAdminInvitesPanel({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <TripJoinLinkActions group={group} />
         {knownContacts.length > 0 ? (
           <div className="space-y-1">
             <Label htmlFor="invite-contact">From contacts</Label>

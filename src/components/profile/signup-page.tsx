@@ -24,6 +24,7 @@ export function SignupPage() {
   const [error, setError] = useState<string | null>(null)
 
   const canSubmit = username.trim().length > 0 && password.length >= 5
+  const joiningTrip = Boolean(next?.includes("/trip/") || join)
 
   async function onSubmit() {
     setBusy(true)
@@ -35,7 +36,10 @@ export function SignupPage() {
         : join
           ? `/?join=${encodeURIComponent(join)}`
           : "/"
-      router.replace(`/profile/setup?next=${encodeURIComponent(target)}`)
+      const setupQuery = join && !next
+        ? `?next=${encodeURIComponent(target)}&join=${encodeURIComponent(join)}`
+        : `?next=${encodeURIComponent(target)}`
+      router.replace(`/profile/setup${setupQuery}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.")
     } finally {
@@ -46,7 +50,7 @@ export function SignupPage() {
   const loginHref = next
     ? `/login?next=${encodeURIComponent(safeReturnPath(next))}`
     : join
-      ? `/login?join=${encodeURIComponent(join)}`
+      ? `/login?join=${encodeURIComponent(join)}&next=${encodeURIComponent(`/?join=${encodeURIComponent(join)}`)}`
       : "/login"
 
   return (
@@ -62,8 +66,9 @@ export function SignupPage() {
         <CardHeader>
           <CardTitle className="font-heading text-3xl">Create account</CardTitle>
           <CardDescription>
-            Account required before joining a trip. Next step: display name, email, and
-            phone.
+            {joiningTrip
+              ? "Create an account to join the trip. Next: your name, email, and phone (must match an invite if you got one)."
+              : "Account required before joining a trip. Next step: display name, email, and phone."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

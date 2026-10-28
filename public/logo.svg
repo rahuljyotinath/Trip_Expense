@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" fill="none" role="img" aria-label="Tripzy">
+  <rect width="40" height="40" rx="10" fill="#8B4519"/>
+  <path
+    d="M13 14h14M20 14v12"
+    stroke="#FAF7F2"
+    stroke-width="2.75"
+    stroke-linecap="round"
+  />
+  <path
+    d="M20 22c3.5 0 6.5 1.4 8.5 4"
+    stroke="#FAF7F2"
+    stroke-width="2.25"
+    stroke-linecap="round"
+  />
+  <circle cx="29.5" cy="27.5" r="2.5" fill="#3D6B4F"/>
+  <text
+    x="50"
+    y="28"
+    fill="#3D2E24"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="26"
+    letter-spacing="-0.02em"
+  >
+    Tripzy
+  </text>
+</svg>

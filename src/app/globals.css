@@ -92,15 +92,22 @@
     @apply border-border outline-ring/50;
   }
   html {
-    @apply font-sans;
+    @apply bg-background font-sans;
   }
-  body {
-    @apply bg-background text-foreground;
+  html::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--background);
     background-image:
       radial-gradient(oklch(0.7 0.03 70 / 0.12) 0.6px, transparent 0.6px),
       linear-gradient(180deg, oklch(0.97 0.015 90), oklch(0.94 0.022 80));
     background-size: 7px 7px, auto;
-    min-height: 100%;
+  }
+  body {
+    @apply bg-transparent text-foreground;
     -webkit-tap-highlight-color: transparent;
   }
   @media (max-width: 1023px) {

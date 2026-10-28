@@ -1,6 +1,6 @@
-# Trip Expenses Balancer
+# Tripzy
 
-Group trip expenses. One person opens a trip and names the people. Everyone **signs up**, enters the trip **join code**, and claims their roster nickname. Spends store date, amount, reason, payer, and who was on the bill.
+Group trip expenses (Tripzy — user-facing brand; npm package `waybill`). One person opens a trip and names the people. Everyone **signs up**, enters the trip **join code**, and claims their roster nickname. Spends store date, amount, reason, payer, and who was on the bill.
 
 **Production** stores all trip data in **Supabase Postgres** (`POSTGRES_URL`). **Never commit real ledger JSON** to git — use local `data/store.json` only for offline dev. Older repo commits may have contained a snapshot; live data stays in Postgres only.
 

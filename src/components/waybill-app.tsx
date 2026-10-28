@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { BrandMark } from "@/components/brand-mark"
 import { ProfileLink } from "@/components/profile/profile-link"
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -217,7 +218,7 @@ export function WaybillApp() {
         if (joinFromUrl) {
           if (!session?.id) {
             router.replace(
-              `/login?join=${encodeURIComponent(joinFromUrl)}&next=${encodeURIComponent("/")}`
+              `/login?join=${encodeURIComponent(joinFromUrl)}&next=${encodeURIComponent(`/?join=${encodeURIComponent(joinFromUrl)}`)}`
             )
             return
           }
@@ -596,37 +597,35 @@ export function Shell({
             : "relative mb-8 flex items-start justify-between gap-4"
         }
       >
-        <button
-          type="button"
-          onClick={onHome}
-          className="flex min-h-10 min-w-0 flex-1 items-center gap-1 rounded-lg text-left transition-opacity hover:opacity-90 disabled:cursor-default touch-manipulation"
-          disabled={!onHome}
-        >
+        <div className="flex min-h-10 min-w-0 flex-1 items-center gap-0.5">
+          {compact && onHome ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 lg:hidden"
+              onClick={onHome}
+              aria-label="Back"
+            >
+              <ChevronLeft />
+            </Button>
+          ) : null}
           {compact ? (
-            <>
-              {onHome ? (
-                <ChevronLeft className="size-5 shrink-0 text-muted-foreground lg:hidden" aria-hidden />
-              ) : null}
-              <span className="truncate font-heading text-base tracking-tight sm:text-lg lg:text-xl">
-                <span className="lg:hidden">Trips</span>
-                <span className="hidden lg:inline">Trip Expenses Balancer</span>
-              </span>
-            </>
+            <BrandMark
+              size="sm"
+              onClick={onHome}
+              className={onHome ? undefined : "pointer-events-none opacity-100"}
+            />
           ) : (
-            <>
-              <p className="font-mono text-[11px] tracking-[0.22em] text-stamp uppercase">
-                Group ledger
-              </p>
-              <h1 className="font-heading text-4xl tracking-tight sm:text-5xl sm:text-[2.75rem]">
-                Trip Expenses Balancer
-              </h1>
+            <div className="min-w-0">
+              <BrandMark size="md" onClick={onHome} />
               <p className="mt-2 max-w-lg text-sm text-muted-foreground">
                 Free trip khata for India — WhatsApp pe link bhejo, bill split karo, settle clear.
                 Friends ke liye hamesha free.
               </p>
-            </>
+            </div>
           )}
-        </button>
+        </div>
         <div className="shrink-0 text-right text-sm">
           {profile ? (
             <>
@@ -1300,9 +1299,9 @@ export function TripDesk({
   }
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
   useEffect(() => {
-    document.title = `${group.name} — Trip Expenses Balancer`
+    document.title = `${group.name} — Tripzy`
     return () => {
-      document.title = "Trip Expenses Balancer"
+      document.title = "Tripzy"
     }
   }, [group.name])
 

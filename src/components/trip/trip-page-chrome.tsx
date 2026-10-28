@@ -30,6 +30,7 @@ import {
 import { formatMoney } from "@/lib/money"
 import { tripStats } from "@/lib/stats"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
+import { TripJoinLinkActions } from "@/components/trip/trip-join-link-actions"
 import type { Group, PublicProfile } from "@/lib/types"
 
 export type TripTabId = "settle" | "ledger" | "people" | "analytics" | "settings"
@@ -379,7 +380,7 @@ export function TripPageChrome({
             </>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 lg:hidden">
+        <div className="flex flex-col gap-2 lg:hidden">
           <div className="flex flex-1 items-center gap-2 rounded-lg border bg-muted/30 px-2.5 py-2">
             <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
               Code
@@ -397,6 +398,7 @@ export function TripPageChrome({
               {copied ? <Check /> : <Link2 />}
             </Button>
           </div>
+          {isTripAdmin ? <TripJoinLinkActions group={group} compact /> : null}
         </div>
       </div>
 

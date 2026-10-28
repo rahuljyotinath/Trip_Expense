@@ -19,13 +19,13 @@ const instrument = Instrument_Serif({
 })
 
 export const metadata: Metadata = {
-  title: "Trip Expenses Balancer",
+  title: "Tripzy",
   description:
-    "Sign in, join your trip, split bills privately with your group.",
+    "Split trip spends and settle with your group — private trip khata.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Trips",
+    title: "Tripzy",
   },
 }
 
@@ -40,9 +40,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${instrument.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${instrument.variable} min-h-dvh antialiased`}
     >
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-dvh flex-col">{children}</body>
     </html>
   )
 }
