@@ -20,9 +20,11 @@ import {
   loadGroupRelational,
   loadGroupsForProfileRelational,
   loadJoinRequests,
+  loadJoinRequestsForTrip,
   loadProfilesByIdsRelational,
   loadStoreForMutationRelational,
   loadTripInvites,
+  loadTripInvitesForTrip,
   persistStoreDiffRelational,
   readLedgerStatsRelational,
   type MutationScope,
@@ -303,6 +305,31 @@ export async function readStoreFresh() {
 export type StoreLedgerMeta = {
   joinRequests: JoinRequest[]
   tripInvites: TripInvite[]
+}
+
+export async function readTripLedgerMeta(tripId: string): Promise<StoreLedgerMeta> {
+  const groupId = tripId.trim()
+  if (!groupId) return { joinRequests: [], tripInvites: [] }
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const [joinRequests, tripInvites] = await Promise.all([
+        loadJoinRequestsForTrip(sql, groupId),
+        loadTripInvitesForTrip(sql, groupId),
+      ])
+      return { joinRequests, tripInvites }
+    }
+    const full = await readStoreLedgerMeta()
+    return {
+      joinRequests: (full.joinRequests ?? []).filter((item) => item.groupId === groupId),
+      tripInvites: (full.tripInvites ?? []).filter((item) => item.groupId === groupId),
+    }
+  }
+  const store = await readStore()
+  return {
+    joinRequests: (store.joinRequests ?? []).filter((item) => item.groupId === groupId),
+    tripInvites: (store.tripInvites ?? []).filter((item) => item.groupId === groupId),
+  }
 }
 
 export async function readStoreLedgerMeta(): Promise<StoreLedgerMeta> {

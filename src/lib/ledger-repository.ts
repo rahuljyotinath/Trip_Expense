@@ -399,6 +399,26 @@ async function loadMetaVersion(sql: Sql): Promise<number> {
   return rows[0] ? Number(rows[0].version) : 1
 }
 
+function mapJoinRequestRow(r: {
+  id: string
+  group_id: string
+  profile_id: string
+  status: string
+  created_at: string
+  decided_at: string | null
+  decided_by_profile_id: string | null
+}): JoinRequest {
+  return {
+    id: r.id,
+    groupId: r.group_id,
+    profileId: r.profile_id,
+    status: r.status as JoinRequest["status"],
+    createdAt: r.created_at,
+    decidedAt: r.decided_at,
+    decidedByProfileId: r.decided_by_profile_id,
+  }
+}
+
 export async function loadJoinRequests(sql: Sql): Promise<JoinRequest[]> {
   const rows = await sql<
     {
@@ -411,15 +431,49 @@ export async function loadJoinRequests(sql: Sql): Promise<JoinRequest[]> {
       decided_by_profile_id: string | null
     }[]
   >`SELECT * FROM join_requests ORDER BY created_at, id`
-  return rows.map((r) => ({
+  return rows.map(mapJoinRequestRow)
+}
+
+export async function loadJoinRequestsForTrip(
+  sql: Sql,
+  tripId: string
+): Promise<JoinRequest[]> {
+  const rows = await sql<
+    {
+      id: string
+      group_id: string
+      profile_id: string
+      status: string
+      created_at: string
+      decided_at: string | null
+      decided_by_profile_id: string | null
+    }[]
+  >`SELECT * FROM join_requests WHERE group_id = ${tripId} ORDER BY created_at, id`
+  return rows.map(mapJoinRequestRow)
+}
+
+function mapTripInviteRow(r: {
+  id: string
+  group_id: string
+  invited_email: string | null
+  invited_phone: string | null
+  status: string
+  created_by_profile_id: string
+  created_at: string
+  responded_at: string | null
+  responded_by_profile_id: string | null
+}): TripInvite {
+  return {
     id: r.id,
     groupId: r.group_id,
-    profileId: r.profile_id,
-    status: r.status as JoinRequest["status"],
+    invitedEmail: r.invited_email,
+    invitedPhone: r.invited_phone,
+    status: r.status as TripInvite["status"],
+    createdByProfileId: r.created_by_profile_id,
     createdAt: r.created_at,
-    decidedAt: r.decided_at,
-    decidedByProfileId: r.decided_by_profile_id,
-  }))
+    respondedAt: r.responded_at,
+    respondedByProfileId: r.responded_by_profile_id,
+  }
 }
 
 export async function loadTripInvites(sql: Sql): Promise<TripInvite[]> {
@@ -436,17 +490,27 @@ export async function loadTripInvites(sql: Sql): Promise<TripInvite[]> {
       responded_by_profile_id: string | null
     }[]
   >`SELECT * FROM trip_invites ORDER BY created_at, id`
-  return rows.map((r) => ({
-    id: r.id,
-    groupId: r.group_id,
-    invitedEmail: r.invited_email,
-    invitedPhone: r.invited_phone,
-    status: r.status as TripInvite["status"],
-    createdByProfileId: r.created_by_profile_id,
-    createdAt: r.created_at,
-    respondedAt: r.responded_at,
-    respondedByProfileId: r.responded_by_profile_id,
-  }))
+  return rows.map(mapTripInviteRow)
+}
+
+export async function loadTripInvitesForTrip(
+  sql: Sql,
+  tripId: string
+): Promise<TripInvite[]> {
+  const rows = await sql<
+    {
+      id: string
+      group_id: string
+      invited_email: string | null
+      invited_phone: string | null
+      status: string
+      created_by_profile_id: string
+      created_at: string
+      responded_at: string | null
+      responded_by_profile_id: string | null
+    }[]
+  >`SELECT * FROM trip_invites WHERE group_id = ${tripId} ORDER BY created_at, id`
+  return rows.map(mapTripInviteRow)
 }
 
 export async function loadContacts(sql: Sql): Promise<Contact[]> {

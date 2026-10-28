@@ -148,15 +148,34 @@ function writeLocalStore(store: Store) {
   window.localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(store))
 }
 
+const memoryGroupById = new Map<string, Group>()
+
 export function cachedGroupById(id: string): Group | null {
   if (typeof window === "undefined" || !id.trim()) return null
+  const fromMemory = memoryGroupById.get(id)
+  if (fromMemory) return fromMemory
   return readLocalStore().groups.find((item) => item.id === id) ?? null
 }
 
 export function persistGroupSnapshot(group: Group) {
   if (typeof window === "undefined") return
+  memoryGroupById.set(group.id, group)
   try {
     writeLocalStore(storeWithTrip(readLocalStore(), group))
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function persistGroupSnapshots(groups: Group[]) {
+  if (typeof window === "undefined" || groups.length === 0) return
+  try {
+    let store = readLocalStore()
+    for (const group of groups) {
+      memoryGroupById.set(group.id, group)
+      store = storeWithTrip(store, group)
+    }
+    writeLocalStore(store)
   } catch {
     /* quota / private mode */
   }

@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
-import { Shell, TripDesk } from "@/components/waybill-app"
+import { Shell } from "@/components/trip/trip-shell"
+import { TripDesk } from "@/components/trip/trip-desk"
 import { useTripLoad } from "@/components/trip/use-trip-load"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -81,7 +82,7 @@ export function TripPage() {
     router.replace("/login")
   }
 
-  if (loading) {
+  if (loading && !group) {
     return <PageLoadFallback message="Loading trip…" compact />
   }
 

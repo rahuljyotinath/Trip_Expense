@@ -9,14 +9,13 @@ import {
   fetchGroupDetail,
   fetchSessionProfile,
   isNetworkError,
-  loadHealth,
+  loadSavedProfile,
   startOfflineOutboxSync,
   syncProfileToLocalStore,
   type Health,
 } from "@/lib/client-api"
 import type {
   Group,
-  JoinRequest,
   LinkedTripProfile,
   PublicProfile,
   TripInvite,
@@ -34,11 +33,19 @@ export function useTripLoad(groupId: string, tripPath: string) {
   const joinCode = (searchParams.get("join") ?? "").trim().toUpperCase() || null
 
   const [health, setHealth] = useState<Health | null>(null)
-  const [profile, setProfile] = useState<PublicProfile | null>(null)
-  const [group, setGroup] = useState<Group | null>(null)
+  const [profile, setProfile] = useState<PublicProfile | null>(() =>
+    typeof window === "undefined" ? null : loadSavedProfile()
+  )
+  const [group, setGroup] = useState<Group | null>(() =>
+    groupId ? cachedGroupById(groupId) : null
+  )
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [fromCache, setFromCache] = useState(false)
+  const [loading, setLoading] = useState(() =>
+    groupId ? !cachedGroupById(groupId) : true
+  )
+  const [fromCache, setFromCache] = useState(() =>
+    groupId ? Boolean(cachedGroupById(groupId)) : false
+  )
   const [pendingJoinRequests, setPendingJoinRequests] = useState<
     PendingJoinRequestRow[]
   >([])
@@ -56,19 +63,27 @@ export function useTripLoad(groupId: string, tripPath: string) {
     if (!groupId) return
 
     let cancelled = false
+    const cached = cachedGroupById(groupId)
+
+    if (cached) {
+      setGroup(cached)
+      setFromCache(true)
+      setLoading(false)
+      const saved = loadSavedProfile()
+      if (saved) setProfile(saved)
+    } else {
+      setLoading(true)
+      setFromCache(false)
+    }
+    setLoadError(null)
 
     ;(async () => {
-      setLoading(true)
-      setLoadError(null)
-      setFromCache(false)
-      setGroup(null)
       try {
-        const [nextHealth, session] = await Promise.all([
-          loadHealth(),
+        const [session, detail] = await Promise.all([
           fetchSessionProfile(),
+          fetchGroupDetail(groupId, { skipHealth: true, joinCode }),
         ])
         if (cancelled) return
-        setHealth(nextHealth)
         if (!session?.id || !session.username) {
           const next = tripAuthReturnPath(tripPath, joinCode)
           router.replace(`/login?next=${encodeURIComponent(next)}`)
@@ -82,30 +97,21 @@ export function useTripLoad(groupId: string, tripPath: string) {
         }
         setProfile(session)
         syncProfileToLocalStore(session)
-        try {
-          const detail = await fetchGroupDetail(groupId, {
-            skipHealth: true,
-            joinCode,
-          })
-          if (cancelled) return
-          setGroup(detail.group)
-          setPendingJoinRequests(detail.pendingJoinRequests)
-          setPendingTripInvites(detail.pendingTripInvites)
-          setLinkedProfiles(detail.linkedProfiles)
-          setViewerTripInvite(detail.viewerTripInvite)
-          setFromCache(false)
-        } catch (err) {
-          if (cancelled) return
-          const cached = isNetworkError(err) ? cachedGroupById(groupId) : null
-          if (cached) {
-            setGroup(cached)
-            setFromCache(true)
-            return
-          }
-          setLoadError(errorText(err))
-        }
+        setGroup(detail.group)
+        setPendingJoinRequests(detail.pendingJoinRequests)
+        setPendingTripInvites(detail.pendingTripInvites)
+        setLinkedProfiles(detail.linkedProfiles)
+        setViewerTripInvite(detail.viewerTripInvite)
+        setFromCache(false)
       } catch (err) {
-        if (!cancelled) setLoadError(errorText(err))
+        if (cancelled) return
+        const fallback = isNetworkError(err) ? cachedGroupById(groupId) : null
+        if (fallback) {
+          setGroup(fallback)
+          setFromCache(true)
+          return
+        }
+        setLoadError(errorText(err))
       } finally {
         if (!cancelled) setLoading(false)
       }

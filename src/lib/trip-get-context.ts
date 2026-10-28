@@ -3,7 +3,7 @@ import {
   readProfileForSession,
   readProfilesByIds,
   readStore,
-  readStoreLedgerMeta,
+  readTripLedgerMeta,
   storageMode,
 } from "@/lib/db"
 import { linkedProfilesForGroup } from "@/lib/linked-trip-profiles"
@@ -32,7 +32,7 @@ export type TripGetPayload = {
 }
 
 async function resolveGroup(id: string): Promise<Group | null> {
-  let group = await readGroupById(id)
+  const group = await readGroupById(id)
   if (group) return group
   if (storageMode() === "postgres") return null
   const store = await readStore()
@@ -59,16 +59,18 @@ export async function loadTripGetPayload(
   sessionId: string,
   joinCode: string | null
 ): Promise<TripGetPayload | { error: "not_found" | "forbidden" }> {
-  const group = await resolveGroup(groupId)
+  const [group, meta, sessionProfile] = await Promise.all([
+    resolveGroup(groupId),
+    readTripLedgerMeta(groupId),
+    readProfileForSession(sessionId),
+  ])
   if (!group) return { error: "not_found" }
 
-  const meta = await readStoreLedgerMeta()
   const joinRequests = meta.joinRequests
   if (!canViewGroup(sessionId, group, { joinCode, joinRequests })) {
     return { error: "forbidden" }
   }
 
-  const sessionProfile = await readProfileForSession(sessionId)
   const profileIds = profileIdsForTripContext(group, joinRequests, sessionId)
   const profiles = await readProfilesByIds(profileIds)
   const mergedProfiles = [...profiles]

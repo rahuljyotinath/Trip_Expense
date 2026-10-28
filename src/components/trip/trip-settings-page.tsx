@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
-import { Shell } from "@/components/waybill-app"
+import { Shell } from "@/components/trip/trip-shell"
 import { applyGroupPatchOptimistic } from "@/lib/group-patch-optimistic"
 import { TripAdminInvitesPanel } from "@/components/trip/trip-admin-invites-panel"
 import { useTripLoad } from "@/components/trip/use-trip-load"
