@@ -34,6 +34,7 @@ import {
   revokeTripInvite,
   sendTripInvite,
   setMemberCover,
+  setTripAdmin,
   reorderLedgerDay,
   voidExpense,
   voidPayment,
@@ -156,6 +157,7 @@ export async function PATCH(
       phone?: string | null
       code?: string
       targetProfileId?: string | null
+      isAdmin?: boolean
     }>(request)
 
     const result = await updateStore((store) => {
@@ -218,7 +220,17 @@ export async function PATCH(
         })
       }
       if (body.action === "add-member") {
-        return addMember(store, id, body.name ?? "")
+        requireSessionProfile()
+        return addMember(store, id, body.name ?? "", sessionId)
+      }
+      if (body.action === "set-trip-admin") {
+        requireSessionProfile()
+        return setTripAdmin(store, {
+          groupId: id,
+          actorProfileId: sessionId,
+          targetProfileId: body.targetProfileId ?? "",
+          isAdmin: Boolean(body.isAdmin),
+        })
       }
       if (body.action === "update-group") {
         requireSessionProfile()

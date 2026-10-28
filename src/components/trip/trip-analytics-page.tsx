@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { logoutUser } from "@/lib/client-api"
+import { isTripAdmin } from "@/lib/trip-invites"
 import type { Group } from "@/lib/types"
 import { AlertCircle } from "lucide-react"
 
@@ -96,7 +97,7 @@ export function TripAnalyticsPage() {
   }
 
   const seat = profile ? mySeat(group, profile.id) : null
-  const isOpener = profile ? group.createdByProfileId === profile.id : false
+  const tripAdmin = profile ? isTripAdmin(group, profile.id) : false
   const canWrite = Boolean(profile && seat)
 
   return (
@@ -120,7 +121,7 @@ export function TripAnalyticsPage() {
           profile={profile}
           tripPath={tripPath}
           seatId={seat?.id ?? null}
-          isOpener={isOpener}
+          isTripAdmin={tripAdmin}
           canWrite={canWrite}
           busy={busy}
           copied={copied}

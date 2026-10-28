@@ -95,6 +95,7 @@ import {
 import { todayIsoDate } from "@/lib/ids"
 import { formatMoney, parseAmount } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
+import { isTripAdmin } from "@/lib/trip-invites"
 import { settlementBalances, simplifyDebts } from "@/lib/settle"
 import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
@@ -1200,10 +1201,8 @@ export function TripDesk({
   busy,
   copied,
   expenseOpen,
-  memberOpen,
   paymentOpen,
   onExpenseOpen,
-  onMemberOpen,
   onPaymentOpen,
   onCopy,
   onRefresh,
@@ -1212,8 +1211,6 @@ export function TripDesk({
   onBusy,
   onClaim,
   fromCache = false,
-  pendingJoinRequests = [],
-  pendingTripInvites = [],
   linkedProfiles = [],
 }: {
   profile: PublicProfile | null
@@ -1222,10 +1219,8 @@ export function TripDesk({
   busy: boolean
   copied: boolean
   expenseOpen: boolean
-  memberOpen: boolean
   paymentOpen: boolean
   onExpenseOpen: (open: boolean) => void
-  onMemberOpen: (open: boolean) => void
   onPaymentOpen: (open: boolean) => void
   onCopy: (value: string) => void
   onRefresh: () => Promise<void>
@@ -1234,20 +1229,10 @@ export function TripDesk({
   onBusy: (value: boolean) => void
   onClaim?: (memberId: string) => void
   fromCache?: boolean
-  pendingJoinRequests?: Array<
-    JoinRequest & { profileName?: string; profileUsername?: string | null }
-  >
-  pendingTripInvites?: import("@/lib/types").TripInvite[]
   linkedProfiles?: LinkedTripProfile[]
 }) {
   const seat = profile ? mySeat(group, profile.id) : null
-  const isOpener = profile ? group.createdByProfileId === profile.id : false
-  const isAdmin = isOpener
-  const [inviteEmail, setInviteEmail] = useState("")
-  const [invitePhone, setInvitePhone] = useState("")
-  const [inviteContactId, setInviteContactId] = useState("")
-  const [inviteTargetProfileId, setInviteTargetProfileId] = useState("")
-  const [knownContacts, setKnownContacts] = useState<KnownContact[]>([])
+  const isAdmin = profile ? isTripAdmin(group, profile.id) : false
   const canWrite = Boolean(profile && seat)
   const claimSuggestion = profile && !seat ? suggestedMember(group, profile.name) : null
   const balances = useMemo(() => settlementBalances(group), [group])
@@ -1262,7 +1247,6 @@ export function TripDesk({
   )
   const memberIds = useMemo(() => group.members.map((member) => member.id), [group.members])
   const viewerMemberId = seat?.id ?? null
-  const [tripEditOpen, setTripEditOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [draftExpenseDate, setDraftExpenseDate] = useState<string | null>(null)
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<Expense | null>(null)
@@ -1308,16 +1292,6 @@ export function TripDesk({
   }, [group.name])
 
   useEffect(() => {
-    if (!isAdmin || !profile?.id) {
-      setKnownContacts([])
-      return
-    }
-    void fetchKnownContacts()
-      .then(setKnownContacts)
-      .catch(() => setKnownContacts([]))
-  }, [isAdmin, profile?.id])
-
-  useEffect(() => {
     function scrollToLedgerHash() {
       const hash = typeof window !== "undefined" ? window.location.hash : ""
       if (!hash.startsWith("#ledger-day-")) return
@@ -1340,7 +1314,7 @@ export function TripDesk({
         profile={profile}
         tripPath={tripPath}
         seatId={seat?.id ?? null}
-        isOpener={isOpener}
+        isTripAdmin={isAdmin}
         canWrite={canWrite}
         busy={busy}
         copied={copied}
@@ -1348,7 +1322,6 @@ export function TripDesk({
         activeTab={deskTab}
         tabHref={tabHref}
         onCopy={onCopy}
-        onEditTrip={isOpener ? () => setTripEditOpen(true) : undefined}
         onImportCsvReady={setImportCsvText}
         onImportCsvError={onError}
         onPaymentOpen={() => {
@@ -1434,8 +1407,7 @@ export function TripDesk({
                 const crossed = Boolean(payment.voidedAt)
                 const canEdit =
                   profile &&
-                  (payment.createdByProfileId === profile.id ||
-                    group.createdByProfileId === profile.id)
+                  (payment.createdByProfileId === profile.id || isAdmin)
                 return (
                   <div
                     key={payment.id}
@@ -1643,8 +1615,7 @@ export function TripDesk({
                             const payment = item.payment
                             const canEditPayment =
                               profile &&
-                              (payment.createdByProfileId === profile.id ||
-                                group.createdByProfileId === profile.id)
+                              (payment.createdByProfileId === profile.id || isAdmin)
                             const tone = paymentViewerTone(payment, viewerMemberId)
                             return (
                               <div
@@ -1731,8 +1702,7 @@ export function TripDesk({
                           const expense = item.expense
                           const canEdit =
                             profile &&
-                            (expense.createdByProfileId === profile.id ||
-                              group.createdByProfileId === profile.id)
+                            (expense.createdByProfileId === profile.id || isAdmin)
                           const second = expenseViewerSecondAmount(
                             expense,
                             viewerMemberId,
@@ -1879,207 +1849,6 @@ export function TripDesk({
         </TabsContent>
         <TabsContent value="people" className={tripTabPanelClass}>
           <div className="space-y-2">
-          {isAdmin && profile ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Trip admin</CardTitle>
-                <CardDescription>
-                  Invite by email or phone, and approve join requests when join approval
-                  is on.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {knownContacts.length > 0 ? (
-                  <div className="space-y-1">
-                    <Label htmlFor="invite-contact">From contacts</Label>
-                    <select
-                      id="invite-contact"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-                      value={inviteContactId}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const id = event.target.value
-                        setInviteContactId(id)
-                        const picked = knownContacts.find((item) => item.id === id)
-                        if (picked) {
-                          setInviteTargetProfileId(picked.id)
-                          setInviteEmail("")
-                          setInvitePhone("")
-                        } else {
-                          setInviteTargetProfileId("")
-                        }
-                      }}
-                    >
-                      <option value="">Pick someone…</option>
-                      {knownContacts.map((contact) => (
-                        <option key={contact.contactId} value={contact.id}>
-                          {contact.name}
-                          {contact.username ? ` (@${contact.username})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Input
-                    placeholder="Email or @username"
-                    value={inviteEmail}
-                    onChange={(event) => {
-                      setInviteEmail(event.target.value)
-                      setInviteContactId("")
-                      setInviteTargetProfileId("")
-                    }}
-                  />
-                  <Input
-                    placeholder="Phone"
-                    value={invitePhone}
-                    onChange={(event) => {
-                      setInvitePhone(event.target.value)
-                      setInviteContactId("")
-                      setInviteTargetProfileId("")
-                    }}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  disabled={
-                    busy ||
-                    (!inviteTargetProfileId &&
-                      !inviteEmail.trim() &&
-                      !invitePhone.trim())
-                  }
-                  onClick={() => {
-                    applyGroupPatchOptimistic({
-                      group,
-                      profile,
-                      body: {
-                        action: "send-trip-invite",
-                        email: inviteEmail.trim() || null,
-                        phone: invitePhone.trim() || null,
-                        targetProfileId: inviteTargetProfileId || null,
-                        profileId: profile.id,
-                      },
-                      onGroup,
-                      onError,
-                      onBusy,
-                      refresh: onRefresh,
-                      onDone: () => {
-                        setInviteEmail("")
-                        setInvitePhone("")
-                        setInviteContactId("")
-                        setInviteTargetProfileId("")
-                      },
-                    })
-                  }}
-                >
-                  Send invite
-                </Button>
-                {pendingTripInvites.length > 0 ? (
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium">Pending invites</p>
-                    {pendingTripInvites.map((invite) => (
-                      <div
-                        key={invite.id}
-                        className="flex items-center justify-between gap-2 rounded border px-2 py-1"
-                      >
-                        <span className="truncate text-muted-foreground">
-                          {invite.invitedEmail ?? invite.invitedPhone ?? "—"}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          disabled={busy}
-                          onClick={() => {
-                            applyGroupPatchOptimistic({
-                              group,
-                              profile,
-                              body: {
-                                action: "revoke-trip-invite",
-                                inviteId: invite.id,
-                                profileId: profile.id,
-                              },
-                              onGroup,
-                              onError,
-                              onBusy,
-                              refresh: onRefresh,
-                            })
-                          }}
-                        >
-                          Revoke
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {pendingJoinRequests.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Join requests</p>
-                    {pendingJoinRequests.map((request) => (
-                      <div
-                        key={request.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border px-2 py-2 text-sm"
-                      >
-                        <span>
-                          {request.profileUsername ? (
-                            <ProfileLink username={request.profileUsername}>
-                              {request.profileName ?? "Traveler"}
-                            </ProfileLink>
-                          ) : (
-                            (request.profileName ?? "Traveler")
-                          )}
-                        </span>
-                        <span className="flex gap-1">
-                          <Button
-                            size="xs"
-                            disabled={busy}
-                            onClick={() => {
-                              applyGroupPatchOptimistic({
-                                group,
-                                profile,
-                                body: {
-                                  action: "approve-join-request",
-                                  requestId: request.id,
-                                  profileId: profile.id,
-                                },
-                                onGroup,
-                                onError,
-                                onBusy,
-                                refresh: onRefresh,
-                              })
-                            }}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => {
-                              applyGroupPatchOptimistic({
-                                group,
-                                profile,
-                                body: {
-                                  action: "reject-join-request",
-                                  requestId: request.id,
-                                  profileId: profile.id,
-                                },
-                                onGroup,
-                                onError,
-                                onBusy,
-                                refresh: onRefresh,
-                              })
-                            }}
-                          >
-                            Reject
-                          </Button>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
           {group.members.map((member) => {
             const cover = member.coveredByMemberId
               ? group.members.find((item) => item.id === member.coveredByMemberId)
@@ -2204,31 +1973,11 @@ export function TripDesk({
               </div>
             </div>
           ) : null}
-          {canWrite ? (
-            <Button variant="outline" onClick={() => onMemberOpen(true)}>
-              <Plus /> Add a nickname
-            </Button>
-          ) : null}
           </div>
         </TabsContent>
       </Tabs>
       </TripPageChrome>
 
-      {profile ? (
-        <TripEditDialog
-          open={tripEditOpen}
-          group={group}
-          profile={profile}
-          busy={busy}
-          onOpen={setTripEditOpen}
-          onSaved={(next) => {
-            onGroup(next)
-            setTripEditOpen(false)
-          }}
-          onError={onError}
-          onBusy={onBusy}
-        />
-      ) : null}
       <Dialog
         open={Boolean(importCsvText)}
         onOpenChange={(open) => {
@@ -2346,20 +2095,6 @@ export function TripDesk({
             onError={onError}
             onBusy={onBusy}
           />
-          <MemberDialog
-            open={memberOpen}
-            group={group}
-            profile={profile}
-            busy={busy}
-            onOpen={onMemberOpen}
-            onSaved={(next) => {
-              onGroup(next)
-              onMemberOpen(false)
-            }}
-            onRefresh={onRefresh}
-            onError={onError}
-            onBusy={onBusy}
-          />
           <PaymentDialog
             open={paymentOpen}
             group={group}
@@ -2382,124 +2117,6 @@ export function TripDesk({
         </>
       ) : null}
     </div>
-  )
-}
-
-function TripEditDialog({
-  open,
-  group,
-  profile,
-  busy,
-  onOpen,
-  onSaved,
-  onError,
-  onBusy,
-}: {
-  open: boolean
-  group: Group
-  profile: PublicProfile
-  busy: boolean
-  onOpen: (open: boolean) => void
-  onSaved: (group: Group) => void
-  onError: (message: string | null) => void
-  onBusy: (value: boolean) => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpen}>
-      {open ? (
-        <TripEditForm
-          key={`${group.id}-${group.name}-${group.startDate ?? ""}-${group.endDate ?? ""}`}
-          group={group}
-          profile={profile}
-          busy={busy}
-          onSaved={onSaved}
-          onError={onError}
-          onBusy={onBusy}
-        />
-      ) : null}
-    </Dialog>
-  )
-}
-
-function TripEditForm({
-  group,
-  profile,
-  busy,
-  onSaved,
-  onError,
-  onBusy,
-}: {
-  group: Group
-  profile: PublicProfile
-  busy: boolean
-  onSaved: (group: Group) => void
-  onError: (message: string | null) => void
-  onBusy: (value: boolean) => void
-}) {
-  const [name, setName] = useState(group.name)
-  const [startDate, setStartDate] = useState(group.startDate ?? "")
-  const [endDate, setEndDate] = useState(group.endDate ?? "")
-
-  return (
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit trip details</DialogTitle>
-          <DialogDescription>Name and dates — currency stays as set when the trip opened.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-trip-name">Trip name</Label>
-            <Input
-              id="edit-trip-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-start">Start</Label>
-              <Input
-                id="edit-start"
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-end">End</Label>
-              <Input
-                id="edit-end"
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            disabled={busy}
-            onClick={() => {
-              applyGroupPatchOptimistic({
-                group,
-                profile,
-                body: {
-                  action: "update-group",
-                  profileId: profile.id,
-                  name: name.trim(),
-                  startDate: startDate.trim() || null,
-                  endDate: endDate.trim() || null,
-                },
-                onGroup: onSaved,
-                onError,
-                onBusy,
-              })
-            }}
-          >
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
   )
 }
 
@@ -2717,102 +2334,6 @@ function ExpenseForm({
             }}
           >
             {isEdit ? "Save changes" : "Save spend"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-  )
-}
-
-function MemberDialog({
-  open,
-  group,
-  profile,
-  busy,
-  onOpen,
-  onSaved,
-  onRefresh,
-  onError,
-  onBusy,
-}: {
-  open: boolean
-  group: Group
-  profile: PublicProfile
-  busy: boolean
-  onOpen: (open: boolean) => void
-  onSaved: (group: Group) => void
-  onRefresh: () => Promise<void>
-  onError: (message: string | null) => void
-  onBusy: (value: boolean) => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpen}>
-      {open ? (
-        <MemberForm
-          group={group}
-          profile={profile}
-          busy={busy}
-          onSaved={onSaved}
-          onRefresh={onRefresh}
-          onError={onError}
-          onBusy={onBusy}
-        />
-      ) : null}
-    </Dialog>
-  )
-}
-
-function MemberForm({
-  group,
-  profile,
-  busy,
-  onSaved,
-  onRefresh,
-  onError,
-  onBusy,
-}: {
-  group: Group
-  profile: PublicProfile
-  busy: boolean
-  onSaved: (group: Group) => void
-  onRefresh: () => Promise<void>
-  onError: (message: string | null) => void
-  onBusy: (value: boolean) => void
-}) {
-  const [name, setName] = useState("")
-
-  return (
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add a nickname</DialogTitle>
-          <DialogDescription>
-            Empty seat. Two Rahuls? Call one Rahul K. They match it when they
-            make their profile and enter the code.
-          </DialogDescription>
-        </DialogHeader>
-        <Input
-          value={name}
-          placeholder="Nickname"
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.preventDefault()
-          }}
-        />
-        <DialogFooter>
-          <Button
-            disabled={busy || !name.trim()}
-            onClick={() => {
-              applyGroupPatchOptimistic({
-                group,
-                profile,
-                body: { action: "add-member", name },
-                onGroup: onSaved,
-                onError,
-                onBusy,
-                refresh: onRefresh,
-              })
-            }}
-          >
-            Add seat
           </Button>
         </DialogFooter>
       </DialogContent>

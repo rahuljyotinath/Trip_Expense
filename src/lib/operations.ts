@@ -159,9 +159,10 @@ export function updateGroup(
   }
 ) {
   const group = requireGroup(store, input.groupId)
-  if (group.createdByProfileId !== input.profileId) {
-    throw new Error("Only the trip opener can edit trip details.")
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only a trip admin can edit trip details.")
   }
+  requireSeated(group, input.profileId)
 
   const name =
     input.name === undefined ? group.name : cleanName(input.name, 60)
@@ -181,8 +182,17 @@ export function updateGroup(
   return { store: replaceGroup(store, next), group: next }
 }
 
-export function addMember(store: Store, groupId: string, rawName: string) {
+export function addMember(
+  store: Store,
+  groupId: string,
+  rawName: string,
+  actorProfileId: string
+) {
   const group = requireGroup(store, groupId)
+  if (!isTripAdmin(group, actorProfileId)) {
+    throw new Error("Only a trip admin can add roster nicknames.")
+  }
+  requireSeated(group, actorProfileId)
   const name = cleanName(rawName, 40)
   if (!name) throw new Error("Member needs a name.")
   if (group.members.some((member) => member.name.toLowerCase() === name.toLowerCase())) {
@@ -195,6 +205,34 @@ export function addMember(store: Store, groupId: string, rawName: string) {
       { id: uid("m"), name, profileId: null, coveredByMemberId: null },
     ],
   }
+  return { store: replaceGroup(store, next), group: next }
+}
+
+export function setTripAdmin(
+  store: Store,
+  input: {
+    groupId: string
+    actorProfileId: string
+    targetProfileId: string
+    isAdmin: boolean
+  }
+) {
+  const group = requireGroup(store, input.groupId)
+  if (!isTripAdmin(group, input.actorProfileId)) {
+    throw new Error("Only a trip admin can change admin access.")
+  }
+  requireSeated(group, input.actorProfileId)
+  if (input.targetProfileId === group.createdByProfileId) {
+    throw new Error("The trip creator always stays an admin.")
+  }
+  if (!group.members.some((member) => member.profileId === input.targetProfileId)) {
+    throw new Error("Admin access requires a linked profile on this trip roster.")
+  }
+  const current = group.adminProfileIds ?? []
+  const nextIds = input.isAdmin
+    ? [...new Set([...current, input.targetProfileId])]
+    : current.filter((id) => id !== input.targetProfileId)
+  const next: Group = { ...group, adminProfileIds: nextIds }
   return { store: replaceGroup(store, next), group: next }
 }
 
@@ -535,8 +573,8 @@ export function importTripCsv(
   input: { groupId: string; profileId: string; csv: string }
 ) {
   const group = requireGroup(store, input.groupId)
-  if (group.createdByProfileId !== input.profileId) {
-    throw new Error("Only the trip opener can import a CSV into this trip.")
+  if (!isTripAdmin(group, input.profileId)) {
+    throw new Error("Only a trip admin can import a CSV into this trip.")
   }
   requireSeated(group, input.profileId)
   const parsed = parseTripCsv(input.csv)

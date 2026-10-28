@@ -24,7 +24,8 @@ export function profileMatchesInvite(
 }
 
 export function isTripAdmin(group: Group, profileId: string): boolean {
-  return group.createdByProfileId === profileId
+  if (group.createdByProfileId === profileId) return true
+  return (group.adminProfileIds ?? []).includes(profileId)
 }
 
 export function storeJoinRequests(store: Store): JoinRequest[] {

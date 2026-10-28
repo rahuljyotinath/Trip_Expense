@@ -108,6 +108,8 @@ export type Group = {
   ledgerDayOrder?: Record<string, string[]>
   /** When true, code join creates a pending request until admin approves. */
   joinApprovalRequired?: boolean
+  /** Delegated trip admins (profile ids). Creator is always admin via createdByProfileId. */
+  adminProfileIds?: string[]
 }
 
 export type Store = {
@@ -198,6 +200,9 @@ export function normalizeGroup(group: Group): Group {
     payments: (group.payments ?? []).map(normalizePayment),
     ledgerDayOrder: group.ledgerDayOrder ?? undefined,
     joinApprovalRequired: group.joinApprovalRequired ?? false,
+    adminProfileIds: [...new Set(group.adminProfileIds ?? [])].filter(
+      (id) => id && id !== group.createdByProfileId
+    ),
   }
 }
 

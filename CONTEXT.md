@@ -4,14 +4,17 @@ Shared trip ledger: roster nicknames, spends, equal splits, and cash settlement 
 
 ## Privacy
 
-- Trip details are **not public**. APIs require sign-in; full ledger access for roster members, trip **admin** (creator), or—when the trip allows it—someone with a valid **join code** until they claim a seat. Trips with join approval require admin approval before claim.
+- Trip details are **not public**. APIs require sign-in; full ledger access for roster members, trip **admin** (creator or delegated), or—when the trip allows it—someone with a valid **join code** until they claim a seat. Trips with join approval require admin approval before claim.
 - Ledger data lives in **Postgres** in production — not in the git repo.
 
 ## Language
 
 **Trip admin**:
-The profile that opened the trip (`createdByProfileId`). Sends email/phone invites and approves join requests.
+The trip creator (`createdByProfileId`) or a profile listed in `adminProfileIds`. Admins edit trip details, add roster nicknames, send invites, and approve join requests on **Trip settings** (`/trip/[id]/settings`).
 _Avoid_: owner (unless user-facing)
+
+**Trip settings**:
+Admin-only page for trip configuration (details, roster nicknames, delegated admins, invites, join requests). Not on the People tab.
 
 **Join code**:
 Six-letter code on a trip; primary way to find a trip and request or claim a seat.

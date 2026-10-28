@@ -28,8 +28,6 @@ export function TripPage() {
     loadError,
     loading,
     fromCache,
-    pendingJoinRequests,
-    pendingTripInvites,
     linkedProfiles,
     refreshGroup,
   } = useTripLoad(groupId, tripPath)
@@ -38,7 +36,6 @@ export function TripPage() {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [expenseOpen, setExpenseOpen] = useState(false)
-  const [memberOpen, setMemberOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
 
   async function copyInvite(value: string) {
@@ -114,10 +111,8 @@ export function TripPage() {
           busy={busy}
           copied={copied}
           expenseOpen={expenseOpen}
-          memberOpen={memberOpen}
           paymentOpen={paymentOpen}
           onExpenseOpen={setExpenseOpen}
-          onMemberOpen={setMemberOpen}
           onPaymentOpen={setPaymentOpen}
           onCopy={copyInvite}
           onRefresh={async () => {
@@ -128,8 +123,6 @@ export function TripPage() {
           onBusy={setBusy}
           onClaim={profile ? onClaim : undefined}
           fromCache={fromCache}
-          pendingJoinRequests={pendingJoinRequests}
-          pendingTripInvites={pendingTripInvites}
           linkedProfiles={linkedProfiles}
         />
       </div>

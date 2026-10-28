@@ -28,7 +28,7 @@ import { tripStats } from "@/lib/stats"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
 import type { Group, PublicProfile } from "@/lib/types"
 
-export type TripTabId = "settle" | "ledger" | "people" | "analytics"
+export type TripTabId = "settle" | "ledger" | "people" | "analytics" | "settings"
 
 function TripSyncBanner({
   groupId,
@@ -193,10 +193,12 @@ export function TripNavTabs({
   tripPath,
   active,
   tabHref,
+  showSettings = false,
 }: {
   tripPath: string
   active: TripTabId
   tabHref: (tab: "settle" | "ledger" | "people") => string
+  showSettings?: boolean
 }) {
   const tabClass = (tab: TripTabId) =>
     tab === active
@@ -220,6 +222,14 @@ export function TripNavTabs({
       >
         Analytics
       </Link>
+      {showSettings ? (
+        <Link
+          href={`${tripPath}/settings`}
+          className={`relative inline-flex h-8 items-center justify-center rounded-md px-2.5 text-sm font-medium whitespace-nowrap transition-colors ${tabClass("settings" as TripTabId)}`}
+        >
+          Settings
+        </Link>
+      ) : null}
     </div>
   )
 }
@@ -229,7 +239,7 @@ export function TripPageChrome({
   profile,
   tripPath,
   seatId,
-  isOpener,
+  isTripAdmin,
   canWrite,
   busy,
   copied,
@@ -237,7 +247,6 @@ export function TripPageChrome({
   activeTab,
   tabHref,
   onCopy,
-  onEditTrip,
   onImportCsvReady,
   onImportCsvError,
   onPaymentOpen,
@@ -248,7 +257,7 @@ export function TripPageChrome({
   profile: PublicProfile | null
   tripPath: string
   seatId: string | null
-  isOpener: boolean
+  isTripAdmin: boolean
   canWrite: boolean
   busy: boolean
   copied: boolean
@@ -256,7 +265,6 @@ export function TripPageChrome({
   activeTab: TripTabId
   tabHref: (tab: "settle" | "ledger" | "people") => string
   onCopy: (value: string) => void
-  onEditTrip?: () => void
   onImportCsvReady: (text: string) => void
   onImportCsvError: (message: string) => void
   onPaymentOpen: () => void
@@ -282,16 +290,15 @@ export function TripPageChrome({
             {seatId
               ? `You: ${group.members.find((m) => m.id === seatId)?.name ?? "?"}.`
               : "Claim a nickname to log spends."}
-            {isOpener && onEditTrip ? (
+            {isTripAdmin ? (
               <>
                 {" · "}
-                <button
-                  type="button"
+                <Link
+                  href={`${tripPath}/settings`}
                   className="underline underline-offset-2 hover:text-foreground"
-                  onClick={onEditTrip}
                 >
-                  Edit trip
-                </button>
+                  Trip settings
+                </Link>
               </>
             ) : null}
           </p>
@@ -315,12 +322,12 @@ export function TripPageChrome({
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-          {profile && isOpener ? (
+          {profile && isTripAdmin ? (
             <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
               <Download /> Export CSV
             </Button>
           ) : null}
-          {isOpener && profile ? (
+          {isTripAdmin && profile ? (
             <>
               <input
                 ref={importInputRef}
@@ -365,7 +372,12 @@ export function TripPageChrome({
       </div>
 
       <TripSummaryStrip group={group} seatId={seatId} />
-      <TripNavTabs tripPath={tripPath} active={activeTab} tabHref={tabHref} />
+      <TripNavTabs
+        tripPath={tripPath}
+        active={activeTab}
+        tabHref={tabHref}
+        showSettings={isTripAdmin}
+      />
       {children}
     </div>
   )

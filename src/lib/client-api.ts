@@ -23,6 +23,7 @@ import {
   requestJoin,
   revokeTripInvite,
   sendTripInvite,
+  setTripAdmin,
   importTripCsv,
   setMemberCover,
   createGroup,
@@ -728,7 +729,15 @@ function runGroupPatchMutator(
     })
   }
   if (action === "add-member") {
-    return addMember(store, id, String(body.name ?? ""))
+    return addMember(store, id, String(body.name ?? ""), profileId)
+  }
+  if (action === "set-trip-admin") {
+    return setTripAdmin(store, {
+      groupId: id,
+      actorProfileId: profileId,
+      targetProfileId: String(body.targetProfileId ?? ""),
+      isAdmin: Boolean(body.isAdmin),
+    })
   }
   if (action === "update-group") {
     return updateGroup(store, {
