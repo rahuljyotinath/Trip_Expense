@@ -4,7 +4,7 @@ import type { ExpenseRowMeta } from "@/lib/ledger-display"
 import { formatPaidBackRowTitle } from "@/lib/ledger-display"
 import type { Group, Payment } from "@/lib/types"
 
-/** Title and paid-by adjacent on one line; shared-by on the next. */
+/** Reason on its own line (wraps on narrow screens); paid-by below. */
 export function LedgerExpenseHeadline({
   reason,
   rowMeta,
@@ -14,14 +14,18 @@ export function LedgerExpenseHeadline({
   rowMeta: ExpenseRowMeta
   className?: string
 }) {
+  const title = reason.trim() || "—"
   return (
-    <p className={`min-w-0 truncate text-sm ${className}`}>
-      <span className="font-medium">{reason}</span>
-      <span className="text-muted-foreground"> · </span>
-      <span className="whitespace-nowrap font-semibold">
-        Paid by {rowMeta.paidByLabel}
-      </span>
-    </p>
+    <div className={`min-w-0 text-sm ${className}`}>
+      <p className="font-medium leading-snug break-words [overflow-wrap:anywhere]">
+        {title}
+      </p>
+      <p className="mt-0.5 text-xs text-muted-foreground sm:truncate">
+        <span className="font-semibold text-foreground/85">
+          Paid by {rowMeta.paidByLabel}
+        </span>
+      </p>
+    </div>
   )
 }
 
@@ -35,7 +39,7 @@ export function LedgerPaidBackHeadline({
   viewerMemberId: string | null
 }) {
   return (
-    <p className="min-w-0 truncate text-sm font-medium">
+    <p className="min-w-0 text-sm font-medium leading-snug break-words [overflow-wrap:anywhere] sm:truncate">
       {formatPaidBackRowTitle(group, payment, viewerMemberId)}
     </p>
   )

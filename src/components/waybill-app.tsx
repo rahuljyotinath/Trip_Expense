@@ -1636,33 +1636,39 @@ export function TripDesk({
                               profile &&
                               (payment.createdByProfileId === profile.id || isAdmin)
                             const tone = paymentViewerTone(payment, viewerMemberId)
+                            const paymentGridCols = canWrite
+                              ? viewerMemberId
+                                ? "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]"
+                                : "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]"
+                              : viewerMemberId
+                                ? "sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+                                : "sm:grid-cols-[minmax(0,1fr)_auto_auto]"
                             return (
                               <div
                                 key={payment.id}
                                 {...rowDragHandlers(payment.id)}
-                                className={
-                                  canWrite
-                                    ? "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 px-3 py-1.5"
-                                    : "grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 px-3 py-1.5"
-                                }
+                                className={`gap-x-2 px-3 py-2 max-sm:flex max-sm:items-start max-sm:gap-2 sm:grid sm:items-center sm:py-1.5 ${paymentGridCols}`}
                               >
                                 {canWrite ? (
                                   <GripVertical
-                                    className="size-3.5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                                    className="size-3.5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing max-sm:mt-0.5"
                                     aria-hidden
                                   />
                                 ) : null}
-                                <LedgerPaidBackHeadline
-                                  group={group}
-                                  payment={payment}
-                                  viewerMemberId={viewerMemberId}
-                                />
+                                <div className="min-w-0 flex-1 sm:contents">
+                                  <LedgerPaidBackHeadline
+                                    group={group}
+                                    payment={payment}
+                                    viewerMemberId={viewerMemberId}
+                                  />
+                                </div>
+                                <div className="flex shrink-0 flex-col items-end gap-1 sm:contents">
                                 <p className="shrink-0 text-sm tabular-nums">
                                   {formatMoney(payment.amount, group.currency)}
                                 </p>
                                 {viewerMemberId ? (
                                   <p
-                                    className={`w-[6.75rem] shrink-0 truncate text-right text-[11px] ${
+                                    className={`max-sm:text-[11px] sm:w-[6.75rem] sm:shrink-0 sm:truncate sm:text-right sm:text-[11px] ${
                                       tone === "received"
                                         ? "text-moss"
                                         : "text-muted-foreground"
@@ -1715,6 +1721,7 @@ export function TripDesk({
                                     </Button>
                                   </span>
                                 ) : null}
+                                </div>
                               </div>
                             )
                           }
@@ -1732,95 +1739,118 @@ export function TripDesk({
                             expense,
                             viewerMemberId
                           )
+                          const shareTone =
+                            second.kind === "lent"
+                              ? "text-moss"
+                              : second.kind === "owe"
+                                ? "text-stamp"
+                                : "text-muted-foreground"
+                          const shareLabel =
+                            second.kind === "lent"
+                              ? `You lent ${formatMoney(second.amount, group.currency)}`
+                              : second.kind === "owe"
+                                ? `You owe ${formatMoney(second.amount, group.currency)}`
+                                : "—"
+                          const editButtons = canEdit ? (
+                            <span className="flex shrink-0 gap-0.5">
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                disabled={busy}
+                                aria-label="Edit spend"
+                                onClick={() => {
+                                  setEditingExpense(expense)
+                                  onExpenseOpen(true)
+                                }}
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                disabled={busy}
+                                aria-label="Delete spend"
+                                onClick={() => setDeleteExpenseTarget(expense)}
+                              >
+                                <Trash2 />
+                              </Button>
+                            </span>
+                          ) : null
+                          const expenseGridCols = canWrite
+                            ? viewerMemberId
+                              ? "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]"
+                              : "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]"
+                            : viewerMemberId
+                              ? "sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+                              : "sm:grid-cols-[minmax(0,1fr)_auto_auto]"
                           return (
                             <div
                               key={expense.id}
                               {...rowDragHandlers(expense.id)}
-                              className={
-                                canWrite
-                                  ? "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] grid-rows-[auto_auto] items-center gap-x-2 gap-y-0.5 px-3 py-1.5"
-                                  : "grid grid-cols-[minmax(0,1fr)_auto_auto_auto] grid-rows-[auto_auto] items-center gap-x-2 gap-y-0.5 px-3 py-1.5"
-                              }
+                              className={`px-3 py-2 max-sm:flex max-sm:items-start max-sm:gap-2 sm:grid sm:grid-rows-[auto_auto] sm:items-center sm:gap-x-2 sm:gap-y-0.5 sm:py-1.5 ${expenseGridCols}`}
                             >
                               {canWrite ? (
                                 <GripVertical
-                                  className="col-start-1 row-span-2 size-3.5 shrink-0 cursor-grab self-center text-muted-foreground active:cursor-grabbing"
+                                  className="size-3.5 shrink-0 cursor-grab self-center text-muted-foreground active:cursor-grabbing max-sm:mt-1 sm:col-start-1 sm:row-span-2"
                                   aria-hidden
                                 />
                               ) : null}
-                              <LedgerExpenseHeadline
-                                reason={expense.reason}
-                                rowMeta={rowMeta}
-                                className={canWrite ? "col-start-2 row-start-1" : "col-start-1 row-start-1"}
-                              />
-                              <p
-                                className={`truncate text-[11px] text-muted-foreground ${
-                                  canWrite ? "col-start-2 row-start-2" : "col-start-1 row-start-2"
-                                }`}
-                              >
-                                Shared by {rowMeta.sharedWith}
-                              </p>
-                              <p
-                                className={`row-span-2 shrink-0 self-center text-right text-sm tabular-nums ${
-                                  canWrite ? "col-start-3 row-start-1" : "col-start-2 row-start-1"
-                                }`}
-                              >
-                                {formatMoney(expense.amount, group.currency)}
-                              </p>
-                              {viewerMemberId ? (
+                              <div className="min-w-0 flex-1 max-sm:space-y-0.5 sm:contents">
+                                <LedgerExpenseHeadline
+                                  reason={expense.reason}
+                                  rowMeta={rowMeta}
+                                  className={
+                                    canWrite ? "sm:col-start-2 sm:row-start-1" : "sm:col-start-1 sm:row-start-1"
+                                  }
+                                />
                                 <p
-                                  className={`row-span-2 w-[6.75rem] shrink-0 self-center truncate text-right text-[11px] tabular-nums ${
-                                    canWrite ? "col-start-4 row-start-1" : "col-start-3 row-start-1"
-                                  } ${
-                                    second.kind === "lent"
-                                      ? "text-moss"
-                                      : second.kind === "owe"
-                                        ? "text-stamp"
-                                        : "text-muted-foreground"
+                                  className={`break-words text-[11px] leading-snug text-muted-foreground sm:truncate ${
+                                    canWrite ? "sm:col-start-2 sm:row-start-2" : "sm:col-start-1 sm:row-start-2"
                                   }`}
                                 >
-                                  {second.kind === "lent"
-                                    ? `You lent ${formatMoney(second.amount, group.currency)}`
-                                    : second.kind === "owe"
-                                      ? `You owe ${formatMoney(second.amount, group.currency)}`
-                                      : "—"}
+                                  Shared by {rowMeta.sharedWith}
                                 </p>
-                              ) : null}
-                                {canEdit ? (
+                                {viewerMemberId ? (
+                                  <p
+                                    className={`text-[11px] tabular-nums sm:hidden ${shareTone}`}
+                                  >
+                                    {shareLabel}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end gap-1 max-sm:pt-0.5 sm:contents">
+                                <p
+                                  className={`text-right text-sm tabular-nums sm:row-span-2 sm:self-center ${
+                                    canWrite ? "sm:col-start-3 sm:row-start-1" : "sm:col-start-2 sm:row-start-1"
+                                  }`}
+                                >
+                                  {formatMoney(expense.amount, group.currency)}
+                                </p>
+                                {viewerMemberId ? (
+                                  <p
+                                    className={`hidden w-[6.75rem] truncate text-right text-[11px] tabular-nums sm:block sm:row-span-2 sm:self-center ${
+                                      canWrite ? "sm:col-start-4 sm:row-start-1" : "sm:col-start-3 sm:row-start-1"
+                                    } ${shareTone}`}
+                                  >
+                                    {shareLabel}
+                                  </p>
+                                ) : null}
+                                {editButtons ? (
                                   <span
-                                    className={`row-span-2 flex shrink-0 gap-0.5 self-center ${
+                                    className={
                                       canWrite
                                         ? viewerMemberId
-                                          ? "col-start-5 row-start-1"
-                                          : "col-start-4 row-start-1"
+                                          ? "sm:col-start-5 sm:row-span-2 sm:row-start-1 sm:self-center"
+                                          : "sm:col-start-4 sm:row-span-2 sm:row-start-1 sm:self-center"
                                         : viewerMemberId
-                                          ? "col-start-4 row-start-1"
-                                          : "col-start-3 row-start-1"
-                                    }`}
+                                          ? "sm:col-start-4 sm:row-span-2 sm:row-start-1 sm:self-center"
+                                          : "sm:col-start-3 sm:row-span-2 sm:row-start-1 sm:self-center"
+                                    }
                                   >
-                                    <Button
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      disabled={busy}
-                                      aria-label="Edit spend"
-                                      onClick={() => {
-                                        setEditingExpense(expense)
-                                        onExpenseOpen(true)
-                                      }}
-                                    >
-                                      <Pencil />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      disabled={busy}
-                                      aria-label="Delete spend"
-                                      onClick={() => setDeleteExpenseTarget(expense)}
-                                    >
-                                      <Trash2 />
-                                    </Button>
+                                    {editButtons}
                                   </span>
                                 ) : null}
+                              </div>
                             </div>
                           )
                         })
