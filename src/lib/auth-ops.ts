@@ -69,14 +69,26 @@ export function logIn(
 ) {
   const username = normalizeUsername(input.username)
   const profile = findProfileByUsername(store, username)
+  return { store, profile: assertProfilePassword(profile, input.password) }
+}
+
+/** Login when the profile row is already loaded (indexed DB lookup). */
+export function logInWithProfile(
+  profile: Profile | null,
+  input: { username: string; password: string }
+) {
+  normalizeUsername(input.username)
+  return { profile: assertProfilePassword(profile, input.password) }
+}
+
+function assertProfilePassword(profile: Profile | null, password: string) {
   if (!profile || !profile.passwordHash) {
     throw new Error("Unknown username or wrong password.")
   }
-  const ok = verifyPassword(input.password, profile.passwordHash)
-  if (!ok) {
+  if (!verifyPassword(password, profile.passwordHash)) {
     throw new Error("Unknown username or wrong password.")
   }
-  return { store, profile }
+  return profile
 }
 
 export function profileFromId(store: Store, profileId: string): Profile | null {

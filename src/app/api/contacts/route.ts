@@ -1,4 +1,11 @@
-import { readStoreForContacts, storageMode, updateStore } from "@/lib/db"
+import {
+  readProfileForSession,
+  readProfileForContactSearch,
+  readStoreForContacts,
+  storageMode,
+  updateStore,
+} from "@/lib/db"
+import { normalizeStore } from "@/lib/types"
 import { fail, json, readBody } from "@/lib/http"
 import { addContact, removeContact } from "@/lib/operations"
 import { contactListFromEnriched } from "@/lib/contact-list"
@@ -16,7 +23,7 @@ export async function GET() {
   }
   try {
     await connection()
-    const store = await readStoreForContacts()
+    const store = await readStoreForContacts(sessionId)
     const contacts = contactListFromEnriched(
       listContactsForProfile(store, sessionId)
     )
@@ -53,13 +60,39 @@ export async function POST(request: Request) {
         contacts: contactListFromEnriched(result.contacts),
       })
     }
+    let targetProfileId = body.targetProfileId?.trim()
+    if (!targetProfileId && body.query?.trim()) {
+      const found = await readProfileForContactSearch(body.query)
+      if (!found) throw new Error("No profile matches that username, email, or phone.")
+      targetProfileId = found.id
+    }
+    const owner = await readProfileForSession(sessionId)
+    if (!owner) throw new Error("Sign in again.")
+    const target =
+      targetProfileId && targetProfileId !== owner.id
+        ? (await readProfileForSession(targetProfileId)) ??
+          (body.query?.trim()
+            ? await readProfileForContactSearch(body.query)
+            : null)
+        : null
     const result = await updateStore(
-      (store) =>
-        addContact(store, {
+      (store) => {
+        const seeded = normalizeStore({
+          ...store,
+          profiles: [
+            ...store.profiles,
+            ...(owner && !store.profiles.some((p) => p.id === owner.id) ? [owner] : []),
+            ...(target && !store.profiles.some((p) => p.id === target.id)
+              ? [target]
+              : []),
+          ],
+        })
+        return addContact(seeded, {
           ownerProfileId: sessionId,
+          targetProfileId,
           query: body.query,
-          targetProfileId: body.targetProfileId,
-        }),
+        })
+      },
       { scope: { kind: "createTrip" } }
     )
     return json({ contacts: contactListFromEnriched(result.contacts) })

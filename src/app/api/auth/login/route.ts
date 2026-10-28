@@ -1,7 +1,7 @@
-import { logIn } from "@/lib/auth-ops"
+import { logInWithProfile } from "@/lib/auth-ops"
 import {
   isPostgresPasswordAuthError,
-  readProfilesForAuth,
+  readProfileForLogin,
   resetPostgresClient,
   storageMode,
 } from "@/lib/db"
@@ -18,9 +18,9 @@ export async function POST(request: Request) {
   }
   try {
     const body = await readBody<{ username?: string; password?: string }>(request)
-    let store
+    let profile
     try {
-      store = await readProfilesForAuth()
+      profile = await readProfileForLogin(body.username ?? "")
     } catch (error) {
       if (isPostgresPasswordAuthError(error)) {
         resetPostgresClient()
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       }
       throw error
     }
-    const result = logIn(store, {
+    const result = logInWithProfile(profile, {
       username: body.username ?? "",
       password: body.password ?? "",
     })

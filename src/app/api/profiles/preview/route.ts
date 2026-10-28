@@ -1,6 +1,5 @@
-import { readStoreForProfileSearch, storageMode } from "@/lib/db"
+import { readProfileForContactSearch, storageMode } from "@/lib/db"
 import { fail, json } from "@/lib/http"
-import { findProfileForContactSearch } from "@/lib/trip-contacts"
 import { publicProfileView } from "@/lib/types"
 import { sessionProfileId } from "@/lib/session"
 import { connection } from "next/server"
@@ -19,8 +18,7 @@ export async function GET(request: Request) {
   }
   try {
     await connection()
-    const store = await readStoreForProfileSearch()
-    const match = findProfileForContactSearch(store, q)
+    const match = await readProfileForContactSearch(q)
     if (!match?.username?.trim()) {
       return json({ profile: null })
     }

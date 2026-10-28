@@ -1,10 +1,18 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
+import { normalizeUsername } from "./auth-ops"
 import { isRelationalLedger } from "./ledger-backend"
+import { normalizeInviteEmail, normalizeInvitePhone } from "./trip-invites"
+import { findProfileForContactSearch } from "./trip-contacts"
 import {
   importStoreToRelational,
   loadAllProfiles,
+  loadContactsForOwnerRelational,
+  loadProfileByEmailRelational,
+  loadProfileByPhoneRelational,
+  loadProfileByUsernameRelational,
+  loadTripHeadersByIdsRelational,
   loadContacts,
   loadFullStoreRelational,
   loadGroupByCodeRelational,
@@ -450,22 +458,76 @@ export async function readGroupByCode(code: string): Promise<Group | null> {
   return store.groups.find((group) => group.code === normalized) ?? null
 }
 
-/** Profiles + contacts for contact list (no trips). */
-export async function readStoreForContacts(): Promise<Store> {
+/** Profiles + contacts for one owner's contact list (no trips). */
+export async function readStoreForContacts(ownerProfileId: string): Promise<Store> {
+  const ownerId = ownerProfileId.trim()
+  if (!ownerId) return normalizeStore({ profiles: [], groups: [], contacts: [] })
   if (storageMode() === "postgres") {
     const sql = getSql()
     if (await isRelationalLedger(sql)) {
-      const [profiles, contacts] = await Promise.all([
-        loadAllProfiles(sql),
-        loadContacts(sql),
-      ])
+      const contacts = await loadContactsForOwnerRelational(sql, ownerId)
+      const profileIds = [
+        ownerId,
+        ...contacts.map((item) => item.targetProfileId),
+      ]
+      const profiles = await loadProfilesByIdsRelational(sql, profileIds)
       return normalizeStore({ profiles, groups: [], contacts })
     }
   }
   return readStore()
 }
 
-/** All profiles for username / email / phone search. */
+/** Indexed lookup for @username, email, or phone (no full profile table scan). */
+export async function readProfileForContactSearch(
+  rawQuery: string
+): Promise<Profile | null> {
+  const query = rawQuery.trim()
+  if (!query) return null
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      if (query.startsWith("@")) {
+        return loadProfileByUsernameRelational(
+          sql,
+          normalizeUsername(query.slice(1))
+        )
+      }
+      if (query.includes("@")) {
+        const email = normalizeInviteEmail(query)
+        if (email) return loadProfileByEmailRelational(sql, email)
+      }
+      const phone = normalizeInvitePhone(query)
+      if (phone) return loadProfileByPhoneRelational(sql, phone)
+      return loadProfileByUsernameRelational(sql, normalizeUsername(query))
+    }
+    const store = await readStore()
+    return findProfileForContactSearch(store, query)
+  }
+  const store = await readStore()
+  return findProfileForContactSearch(store, query)
+}
+
+export async function readProfileByUsername(
+  rawUsername: string
+): Promise<Profile | null> {
+  const username = normalizeUsername(rawUsername)
+  if (!username) return null
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadProfileByUsernameRelational(sql, username)
+    }
+    return readProfileForLogin(rawUsername)
+  }
+  const store = await readStore()
+  return (
+    store.profiles.find(
+      (item) => normalizeUsername(item.username) === username
+    ) ?? null
+  )
+}
+
+/** @deprecated Prefer readProfileForContactSearch / readProfileByUsername. */
 export async function readStoreForProfileSearch(): Promise<Store> {
   if (storageMode() === "postgres") {
     const sql = getSql()
@@ -484,30 +546,22 @@ export async function readStoreForTripInvites(sessionProfile: Profile): Promise<
     if (await isRelationalLedger(sql)) {
       const meta = await readStoreLedgerMeta()
       const groupIds = [...new Set((meta.tripInvites ?? []).map((item) => item.groupId))]
-      const groups: Group[] = []
-      for (const groupId of groupIds) {
-        const header = await sql<
-          { id: string; name: string; code: string }[]
-        >`SELECT id, name, code FROM trips WHERE id = ${groupId}`
-        const row = header[0]
-        if (row) {
-          groups.push(
-            normalizeGroup({
-              id: row.id,
-              name: row.name,
-              code: row.code,
-              currency: "INR",
-              startDate: null,
-              endDate: null,
-              createdByProfileId: "",
-              createdAt: "",
-              members: [],
-              expenses: [],
-              payments: [],
-            })
-          )
-        }
-      }
+      const headers = await loadTripHeadersByIdsRelational(sql, groupIds)
+      const groups: Group[] = headers.map((row) =>
+        normalizeGroup({
+          id: row.id,
+          name: row.name,
+          code: row.code,
+          currency: "INR",
+          startDate: null,
+          endDate: null,
+          createdByProfileId: "",
+          createdAt: "",
+          members: [],
+          expenses: [],
+          payments: [],
+        })
+      )
       return normalizeStore({
         profiles: [sessionProfile],
         groups,
@@ -538,6 +592,34 @@ export async function readProfilesForAuth(): Promise<Store> {
   }
   const store = await readStore()
   return normalizeStore({ profiles: store.profiles, groups: [] })
+}
+
+/** One profile row for login — avoids loading every account. */
+export async function readProfileForLogin(rawUsername: string): Promise<Profile | null> {
+  const username = rawUsername.trim().toLowerCase()
+  if (!username) return null
+  const mode = storageMode()
+  if (mode === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadProfileByUsernameRelational(sql, username)
+    }
+    const rows = await sql<{ profile: Profile }[]>`
+      SELECT elem AS profile
+      FROM ledger_store,
+        jsonb_array_elements(data->'profiles') AS elem
+      WHERE ledger_store.id = ${LEDGER_ROW_ID}
+        AND lower(elem->>'username') = ${username}
+      LIMIT 1
+    `
+    return rows[0] ? normalizeProfile(rows[0].profile) : null
+  }
+  const store = await readStore()
+  return (
+    store.profiles.find(
+      (item) => item.username.trim().toLowerCase() === username
+    ) ?? null
+  )
 }
 
 export async function readProfileForSession(profileId: string): Promise<Profile | null> {

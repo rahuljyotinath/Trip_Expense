@@ -163,7 +163,7 @@ export function WaybillApp() {
   const [screen, setScreen] = useState<Screen>("boot")
   const [health, setHealth] = useState<Health | null>(null)
   const [profile, setProfile] = useState<PublicProfile | null>(null)
-  const [groups, setGroups] = useState<Group[]>([])
+  const [groups, setGroups] = useState<Group[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -231,6 +231,7 @@ export function WaybillApp() {
         }
         setProfile(session)
         syncProfileToLocalStore(session)
+        setScreen("home")
         const [list, invites, contacts] = await Promise.all([
           fetchMyGroups(session.id),
           fetchPendingTripInvites().catch(() => [] as Awaited<
@@ -242,7 +243,6 @@ export function WaybillApp() {
         setGroups(list)
         setPendingInvites(invites)
         setKnownContacts(contacts)
-        setScreen("home")
       } catch (err) {
         if (!cancelled) {
           setError(errorText(err))
@@ -261,7 +261,7 @@ export function WaybillApp() {
     try {
       await logoutUser()
       setProfile(null)
-      setGroups([])
+      setGroups(null)
       router.replace("/login")
     } catch (err) {
       setError(errorText(err))
@@ -680,7 +680,7 @@ function Home({
   onOpen,
 }: {
   profile: PublicProfile
-  groups: Group[]
+  groups: Group[] | null
   busy: boolean
   pendingInvites: Awaited<ReturnType<typeof fetchPendingTripInvites>>
   knownContacts: KnownContact[]
@@ -845,7 +845,16 @@ function Home({
         </CardContent>
       </Card>
       <Separator />
-      {groups.length === 0 ? (
+      {groups === null ? (
+        <div className="flex flex-col items-center gap-3 py-10">
+          <div className="ledger-loader" aria-hidden>
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className="text-sm text-muted-foreground">Loading your trips…</p>
+        </div>
+      ) : groups.length === 0 ? (
         <EmptyTrips />
       ) : (
         <div className="stagger-children grid gap-3 sm:grid-cols-2">

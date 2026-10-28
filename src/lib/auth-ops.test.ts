@@ -1,6 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { logIn, profileNeedsSetup, signUp, updateProfile } from "./auth-ops"
+import {
+  logIn,
+  logInWithProfile,
+  profileNeedsSetup,
+  signUp,
+  updateProfile,
+} from "./auth-ops"
 import { emptyStore, publicProfile } from "./types"
 
 test("signUp and logIn", () => {
@@ -76,6 +82,15 @@ test("logIn rejects wrong password", () => {
   assert.throws(() =>
     logIn(created.store, { username: "jane", password: "wrongpass" })
   )
+})
+
+test("logInWithProfile matches logIn for loaded row", () => {
+  const created = signUp(emptyStore(), { username: "jane", password: "password123" })
+  const session = logInWithProfile(created.profile, {
+    username: "jane",
+    password: "password123",
+  })
+  assert.equal(session.profile.id, created.profile.id)
 })
 
 test("logIn works with profiles-only store shape", () => {

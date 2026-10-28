@@ -1,5 +1,4 @@
-import { findProfileByUsername } from "@/lib/auth-ops"
-import { readStoreForProfileSearch, storageMode } from "@/lib/db"
+import { readProfileByUsername, storageMode } from "@/lib/db"
 import { fail, json } from "@/lib/http"
 import { publicProfileView } from "@/lib/types"
 import { sessionProfileId } from "@/lib/session"
@@ -19,8 +18,7 @@ export async function GET(request: Request) {
   }
   try {
     await connection()
-    const store = await readStoreForProfileSearch()
-    const profile = findProfileByUsername(store, username)
+    const profile = await readProfileByUsername(username)
     if (!profile) {
       return json({ error: "Profile not found." }, 404)
     }

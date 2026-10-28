@@ -16,6 +16,8 @@ curl -sS "$APP_URL/api/health" | jq '{
 
 Relational mode: PATCH cost scales with **one trip’s** expense/payment rows, not `ledgerDataBytes`.
 
+Auth and list endpoints use **indexed single-row** or **scoped** reads (login by username, contacts by owner, trip mutations without loading every profile).
+
 ## Browser (trip open)
 
 1. DevTools → Network, disable cache.

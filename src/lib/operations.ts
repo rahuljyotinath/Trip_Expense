@@ -771,8 +771,12 @@ export function addContact(
     source?: ContactSource
   }
 ) {
-  const owner = store.profiles.find((item) => item.id === input.ownerProfileId)
-  if (!owner) throw new Error("Set up your profile first.")
+  const ownerId = input.ownerProfileId.trim()
+  if (!ownerId) throw new Error("Set up your profile first.")
+  const owner = store.profiles.find((item) => item.id === ownerId)
+  if (!owner && store.profiles.length > 0) {
+    throw new Error("Set up your profile first.")
+  }
   let targetId = input.targetProfileId?.trim()
   if (!targetId && input.query) {
     const found = findProfileForContactSearch(store, input.query)
@@ -781,16 +785,18 @@ export function addContact(
   }
   if (!targetId) throw new Error("Choose someone to add.")
   const target = store.profiles.find((item) => item.id === targetId)
-  if (!target) throw new Error("Profile not found.")
+  if (!target && store.profiles.length > 0) {
+    throw new Error("Profile not found.")
+  }
   const source = input.source ?? (input.query ? "search" : "search")
   const next = upsertContactInStore(store, {
-    ownerProfileId: owner.id,
-    targetProfileId: target.id,
+    ownerProfileId: ownerId,
+    targetProfileId: targetId,
     source,
   })
   return {
     store: next,
-    contacts: listContactsForProfile(next, owner.id),
+    contacts: listContactsForProfile(next, ownerId),
   }
 }
 

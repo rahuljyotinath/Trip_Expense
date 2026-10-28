@@ -241,6 +241,140 @@ function stubGroupForCode(id: string, code: string): Group {
   })
 }
 
+export async function loadProfileByUsernameRelational(
+  sql: Sql,
+  username: string
+): Promise<Profile | null> {
+  const normalized = username.trim().toLowerCase()
+  if (!normalized) return null
+  const rows = await sql<
+    {
+      id: string
+      username: string
+      password_hash: string
+      name: string
+      email: string | null
+      phone: string | null
+      created_at: string
+    }[]
+  >`
+    SELECT * FROM profiles WHERE lower(username) = ${normalized} LIMIT 1
+  `
+  return rows[0] ? rowToProfile(rows[0]) : null
+}
+
+export async function loadProfileByEmailRelational(
+  sql: Sql,
+  email: string
+): Promise<Profile | null> {
+  const normalized = email.trim().toLowerCase()
+  if (!normalized) return null
+  const rows = await sql<
+    {
+      id: string
+      username: string
+      password_hash: string
+      name: string
+      email: string | null
+      phone: string | null
+      created_at: string
+    }[]
+  >`
+    SELECT * FROM profiles WHERE lower(email) = ${normalized} LIMIT 1
+  `
+  return rows[0] ? rowToProfile(rows[0]) : null
+}
+
+export async function loadProfileByPhoneRelational(
+  sql: Sql,
+  phoneDigits: string
+): Promise<Profile | null> {
+  if (!phoneDigits) return null
+  const rows = await sql<
+    {
+      id: string
+      username: string
+      password_hash: string
+      name: string
+      email: string | null
+      phone: string | null
+      created_at: string
+    }[]
+  >`
+    SELECT * FROM profiles
+    WHERE regexp_replace(coalesce(phone, ''), '\\D', '', 'g') = ${phoneDigits}
+    LIMIT 1
+  `
+  return rows[0] ? rowToProfile(rows[0]) : null
+}
+
+export async function loadContactsForOwnerRelational(
+  sql: Sql,
+  ownerProfileId: string
+): Promise<Contact[]> {
+  const rows = await sql<
+    {
+      id: string
+      owner_profile_id: string
+      target_profile_id: string
+      source: string
+      created_at: string
+    }[]
+  >`
+    SELECT * FROM contacts
+    WHERE owner_profile_id = ${ownerProfileId}
+    ORDER BY created_at, id
+  `
+  return rows.map((r) => ({
+    id: r.id,
+    ownerProfileId: r.owner_profile_id,
+    targetProfileId: r.target_profile_id,
+    source: r.source as Contact["source"],
+    createdAt: r.created_at,
+  }))
+}
+
+export async function loadTripHeadersByIdsRelational(
+  sql: Sql,
+  tripIds: string[]
+): Promise<{ id: string; name: string; code: string }[]> {
+  const unique = [...new Set(tripIds.map((id) => id.trim()).filter(Boolean))]
+  if (unique.length === 0) return []
+  return sql<{ id: string; name: string; code: string }[]>`
+    SELECT id, name, code FROM trips WHERE id IN ${sql(unique)}
+  `
+}
+
+function profileIdsForTripMutation(
+  group: Group | null,
+  tripId: string,
+  joinRequests: JoinRequest[],
+  tripInvites: TripInvite[]
+): string[] {
+  const ids = new Set<string>()
+  if (group) {
+    if (group.createdByProfileId) ids.add(group.createdByProfileId)
+    for (const adminId of group.adminProfileIds ?? []) {
+      if (adminId) ids.add(adminId)
+    }
+    for (const member of group.members) {
+      if (member.profileId) ids.add(member.profileId)
+    }
+  }
+  for (const jr of joinRequests) {
+    if (jr.groupId === tripId && jr.profileId) ids.add(jr.profileId)
+    if (jr.groupId === tripId && jr.decidedByProfileId) {
+      ids.add(jr.decidedByProfileId)
+    }
+  }
+  for (const inv of tripInvites) {
+    if (inv.groupId !== tripId) continue
+    if (inv.createdByProfileId) ids.add(inv.createdByProfileId)
+    if (inv.respondedByProfileId) ids.add(inv.respondedByProfileId)
+  }
+  return [...ids]
+}
+
 export async function loadAllProfiles(sql: Sql): Promise<Profile[]> {
   const rows = await sql<
     {
@@ -381,18 +515,17 @@ export async function loadStoreForMutationRelational(
   sql: Sql,
   scope: MutationScope
 ): Promise<RelationalLoadState> {
-  const [profiles, joinRequests, tripInvites, contacts, metaVersion] =
-    await Promise.all([
-      loadAllProfiles(sql),
-      loadJoinRequests(sql),
-      loadTripInvites(sql),
-      loadContacts(sql),
-      loadMetaVersion(sql),
-    ])
+  const [joinRequests, tripInvites, contacts, metaVersion] = await Promise.all([
+    loadJoinRequests(sql),
+    loadTripInvites(sql),
+    loadContacts(sql),
+    loadMetaVersion(sql),
+  ])
   const meta = { joinRequests, tripInvites, contacts }
   const tripVersions = new Map<string, number>()
 
   if (scope.kind === "full") {
+    const profiles = await loadAllProfiles(sql)
     const groups = await loadAllGroups(sql)
     for (const g of groups) {
       const header = await loadTripHeader(sql, g.id)
@@ -407,12 +540,14 @@ export async function loadStoreForMutationRelational(
 
   if (scope.kind === "createTrip") {
     const groups = await loadTripCodeStubs(sql)
-    for (const g of groups) {
-      const header = await loadTripHeader(sql, g.id)
-      if (header) tripVersions.set(g.id, Number(header.version))
-    }
+    await Promise.all(
+      groups.map(async (g) => {
+        const header = await loadTripHeader(sql, g.id)
+        if (header) tripVersions.set(g.id, Number(header.version))
+      })
+    )
     return {
-      store: normalizeStore({ profiles, groups, ...meta }),
+      store: normalizeStore({ profiles: [], groups, ...meta }),
       tripVersions,
       metaVersion,
     }
@@ -424,6 +559,13 @@ export async function loadStoreForMutationRelational(
     const header = await loadTripHeader(sql, scope.tripId)
     if (header) tripVersions.set(scope.tripId, Number(header.version))
   }
+  const profileIds = profileIdsForTripMutation(
+    group,
+    scope.tripId,
+    joinRequests,
+    tripInvites
+  )
+  const profiles = await loadProfilesByIdsRelational(sql, profileIds)
   return {
     store: normalizeStore({ profiles, groups, ...meta }),
     tripVersions,
@@ -715,12 +857,10 @@ export async function loadGroupsForProfileRelational(
   const rows = await sql<{ trip_id: string }[]>`
     SELECT DISTINCT trip_id FROM members WHERE profile_id = ${profileId}
   `
-  const groups: Group[] = []
-  for (const row of rows) {
-    const group = await loadGroupRelational(sql, row.trip_id)
-    if (group) groups.push(group)
-  }
-  return groups
+  const loaded = await Promise.all(
+    rows.map((row) => loadGroupRelational(sql, row.trip_id))
+  )
+  return loaded.filter((group): group is Group => group !== null)
 }
 
 export async function loadGroupByCodeRelational(
