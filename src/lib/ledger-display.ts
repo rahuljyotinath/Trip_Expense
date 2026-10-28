@@ -1,4 +1,4 @@
-import { fromPaise, toPaise } from "./money"
+import { formatMoney, fromPaise, toPaise } from "./money"
 import { expenseShareCutsPaise } from "./settle"
 import { memberName } from "./trip-member"
 import type { Expense, Group, Payment } from "./types"
@@ -363,4 +363,13 @@ export function paidBackRowDescription(
     viewerMemberId
   )
   return `paid back by ${fromLabel} to ${toLabel}`
+}
+
+export function formatPaidBackRowPrimary(
+  group: Group,
+  payment: Payment,
+  viewerMemberId: string | null | undefined,
+  currency: string
+): string {
+  return `${formatMoney(payment.amount, currency)} ${paidBackRowDescription(group, payment, viewerMemberId)}`
 }

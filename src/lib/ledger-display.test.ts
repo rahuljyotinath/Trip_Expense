@@ -16,6 +16,7 @@ import {
   expenseRowMeta,
   ledgerDayItems,
   expenseViewerSecondAmount,
+  formatPaidBackRowPrimary,
   paidBackRowDescription,
   paidBackRowLabels,
   paymentViewerTone,
@@ -439,6 +440,7 @@ test("paidBackRowLabels uses You for viewer payer or recipient", () => {
       { id: "m1", name: "Rahul", profileId: "p1", coveredByMemberId: null },
       { id: "m2", name: "Seemon", profileId: null, coveredByMemberId: null },
     ],
+    expenses: [],
     payments: [
       {
         id: "pay1",
@@ -470,6 +472,11 @@ test("paidBackRowLabels uses You for viewer payer or recipient", () => {
     paidBackRowDescription(g, payment, "m1"),
     "paid back by You to Seemon"
   )
+  assert.match(
+    formatPaidBackRowPrimary(g, payment, "m1", "INR"),
+    /paid back by You to Seemon/
+  )
+  assert.doesNotMatch(formatPaidBackRowPrimary(g, payment, "m1", "INR"), /→/)
 })
 
 test("ledgerDayItems interleaves expenses and payments oldest first", () => {

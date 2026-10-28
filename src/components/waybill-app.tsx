@@ -51,6 +51,11 @@ import {
   TripPageChrome,
   type TripTabId,
 } from "@/components/trip/trip-page-chrome"
+import {
+  LedgerExpenseHeadline,
+  LedgerPaidBackHeadline,
+  SettlePaidBackLine,
+} from "@/components/trip/ledger-transaction-rows"
 import { tripTabPanelClass } from "@/components/trip/trip-desk-layout"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -85,7 +90,6 @@ import {
   ledgerDayItems,
   ledgerDaysForViewer,
   ledgerPersonalExpensesForViewer,
-  paidBackRowLabels,
   paymentViewerTone,
 } from "@/lib/ledger-display"
 import { todayIsoDate } from "@/lib/ids"
@@ -1432,21 +1436,18 @@ export function TripDesk({
                   profile &&
                   (payment.createdByProfileId === profile.id ||
                     group.createdByProfileId === profile.id)
-                const paidBack = paidBackRowLabels(
-                  group,
-                  payment,
-                  seat?.id ?? null
-                )
                 return (
                   <div
                     key={payment.id}
                     className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
                   >
-                    <p className={crossed ? "text-muted-foreground line-through" : ""}>
-                      {formatDay(payment.date)} ·{" "}
-                      {formatMoney(payment.amount, group.currency)} paid back by{" "}
-                      {paidBack.fromLabel} to {paidBack.toLabel}
-                    </p>
+                    <SettlePaidBackLine
+                      group={group}
+                      payment={payment}
+                      viewerMemberId={seat?.id ?? null}
+                      dateLabel={formatDay(payment.date)}
+                      crossed={crossed}
+                    />
                     {canEdit ? (
                       <span className="flex shrink-0 gap-0.5">
                         {!crossed ? (
@@ -1640,16 +1641,15 @@ export function TripDesk({
                               (payment.createdByProfileId === profile.id ||
                                 group.createdByProfileId === profile.id)
                             const tone = paymentViewerTone(payment, viewerMemberId)
-                            const paidBack = paidBackRowLabels(
-                              group,
-                              payment,
-                              viewerMemberId
-                            )
                             return (
                               <div
                                 key={payment.id}
                                 {...rowDragHandlers(payment.id)}
-                                className="flex min-h-9 items-center gap-2 px-3 py-1.5"
+                                className={
+                                  canWrite
+                                    ? "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 px-3 py-1.5"
+                                    : "grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 px-3 py-1.5"
+                                }
                               >
                                 {canWrite ? (
                                   <GripVertical
@@ -1657,11 +1657,11 @@ export function TripDesk({
                                     aria-hidden
                                   />
                                 ) : null}
-                                <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                                  {formatMoney(payment.amount, group.currency)}{" "}
-                                  paid back by {paidBack.fromLabel} to{" "}
-                                  {paidBack.toLabel}
-                                </p>
+                                <LedgerPaidBackHeadline
+                                  group={group}
+                                  payment={payment}
+                                  viewerMemberId={viewerMemberId}
+                                />
                                 <p className="shrink-0 text-sm tabular-nums">
                                   {formatMoney(payment.amount, group.currency)}
                                 </p>
@@ -1742,33 +1742,42 @@ export function TripDesk({
                             <div
                               key={expense.id}
                               {...rowDragHandlers(expense.id)}
-                              className="flex min-h-9 items-center gap-2 px-3 py-1.5"
+                              className={
+                                canWrite
+                                  ? "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] grid-rows-[auto_auto] items-center gap-x-2 gap-y-0.5 px-3 py-1.5"
+                                  : "grid grid-cols-[minmax(0,1fr)_auto_auto_auto] grid-rows-[auto_auto] items-center gap-x-2 gap-y-0.5 px-3 py-1.5"
+                              }
                             >
                               {canWrite ? (
                                 <GripVertical
-                                  className="size-3.5 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+                                  className="col-start-1 row-span-2 size-3.5 shrink-0 cursor-grab self-center text-muted-foreground active:cursor-grabbing"
                                   aria-hidden
                                 />
                               ) : null}
-                              <div className="min-w-0 flex-1 space-y-0.5">
-                                <div className="flex min-w-0 items-baseline justify-between gap-2">
-                                  <p className="truncate text-sm font-medium">
-                                    {expense.reason}
-                                  </p>
-                                  <p className="shrink-0 text-sm font-semibold">
-                                    Paid by {rowMeta.paidByLabel}
-                                  </p>
-                                </div>
-                                <p className="truncate text-[11px] text-muted-foreground">
-                                  Shared by {rowMeta.sharedWith}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-right text-sm tabular-nums">
+                              <LedgerExpenseHeadline
+                                reason={expense.reason}
+                                rowMeta={rowMeta}
+                                className={canWrite ? "col-start-2 row-start-1" : "col-start-1 row-start-1"}
+                              />
+                              <p
+                                className={`truncate text-[11px] text-muted-foreground ${
+                                  canWrite ? "col-start-2 row-start-2" : "col-start-1 row-start-2"
+                                }`}
+                              >
+                                Shared by {rowMeta.sharedWith}
+                              </p>
+                              <p
+                                className={`row-span-2 shrink-0 self-center text-right text-sm tabular-nums ${
+                                  canWrite ? "col-start-3 row-start-1" : "col-start-2 row-start-1"
+                                }`}
+                              >
                                 {formatMoney(expense.amount, group.currency)}
                               </p>
                               {viewerMemberId ? (
                                 <p
-                                  className={`w-[6.75rem] shrink-0 truncate text-right text-[11px] tabular-nums ${
+                                  className={`row-span-2 w-[6.75rem] shrink-0 self-center truncate text-right text-[11px] tabular-nums ${
+                                    canWrite ? "col-start-4 row-start-1" : "col-start-3 row-start-1"
+                                  } ${
                                     second.kind === "lent"
                                       ? "text-moss"
                                       : second.kind === "owe"
@@ -1784,7 +1793,17 @@ export function TripDesk({
                                 </p>
                               ) : null}
                                 {canEdit ? (
-                                  <span className="flex shrink-0 gap-0.5">
+                                  <span
+                                    className={`row-span-2 flex shrink-0 gap-0.5 self-center ${
+                                      canWrite
+                                        ? viewerMemberId
+                                          ? "col-start-5 row-start-1"
+                                          : "col-start-4 row-start-1"
+                                        : viewerMemberId
+                                          ? "col-start-4 row-start-1"
+                                          : "col-start-3 row-start-1"
+                                    }`}
+                                  >
                                     <Button
                                       variant="ghost"
                                       size="icon-xs"
