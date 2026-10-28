@@ -4,7 +4,7 @@ import type { ExpenseRowMeta } from "@/lib/ledger-display"
 import { formatPaidBackRowTitle } from "@/lib/ledger-display"
 import type { Group, Payment } from "@/lib/types"
 
-/** Reason on its own line (wraps on narrow screens); paid-by below. */
+/** Mobile: title then paid-by. Desktop (sm+): same row. */
 export function LedgerExpenseHeadline({
   reason,
   rowMeta,
@@ -15,15 +15,23 @@ export function LedgerExpenseHeadline({
   className?: string
 }) {
   const title = reason.trim() || "—"
+  const paidBy = (
+    <span className="font-semibold text-foreground/85">
+      Paid by {rowMeta.paidByLabel}
+    </span>
+  )
   return (
-    <div className={`min-w-0 text-sm ${className}`}>
-      <p className="font-medium leading-snug break-words [overflow-wrap:anywhere]">
+    <div
+      className={`min-w-0 text-sm max-sm:space-y-0.5 sm:flex sm:min-w-0 sm:items-baseline sm:gap-2 ${className}`}
+    >
+      <p className="min-w-0 font-medium leading-snug break-words [overflow-wrap:anywhere] sm:truncate">
         {title}
       </p>
-      <p className="mt-0.5 text-xs text-muted-foreground sm:truncate">
-        <span className="font-semibold text-foreground/85">
-          Paid by {rowMeta.paidByLabel}
+      <p className="text-xs text-muted-foreground max-sm:mt-0 sm:shrink-0 sm:truncate">
+        <span className="hidden text-muted-foreground/70 sm:inline" aria-hidden>
+          ·{" "}
         </span>
+        {paidBy}
       </p>
     </div>
   )
