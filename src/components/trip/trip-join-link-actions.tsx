@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { Check, Link2, MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { publicAppUrl } from "@/lib/app-url"
 import { tripJoinPath, tripJoinUrl } from "@/lib/trip-invite-url"
 import { whatsappInviteMessage, whatsappShareUrl } from "@/lib/whatsapp-invite"
 import type { Group } from "@/lib/types"
@@ -18,7 +19,7 @@ export function TripJoinLinkActions({
   const path = tripJoinPath(group.id, group.code)
   const absoluteUrl = useMemo(() => {
     if (typeof window === "undefined") return path
-    return tripJoinUrl(group.id, group.code, window.location.origin)
+    return tripJoinUrl(group.id, group.code, publicAppUrl())
   }, [group.id, group.code, path])
 
   async function copyLink() {
