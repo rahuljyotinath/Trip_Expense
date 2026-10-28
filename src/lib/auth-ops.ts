@@ -1,4 +1,5 @@
 import { hashPassword, verifyPassword } from "@/lib/auth-crypto"
+import { validateUpiId } from "@/lib/upi"
 import { nowIso, uid } from "@/lib/ids"
 import type { Profile, Store } from "@/lib/types"
 
@@ -55,6 +56,7 @@ export function signUp(
     name,
     email: null,
     phone: null,
+    upiId: null,
     createdAt: nowIso(),
   }
   return {
@@ -127,6 +129,7 @@ export function updateProfile(
     name?: string
     email?: string | null
     phone?: string | null
+    upiId?: string | null
   }
 ) {
   const index = store.profiles.findIndex((item) => item.id === input.profileId)
@@ -150,7 +153,11 @@ export function updateProfile(
   if (input.phone !== undefined && !phone) {
     throw new Error("Phone is required.")
   }
-  const profile: Profile = { ...current, name, email, phone }
+  const upiId =
+    input.upiId !== undefined
+      ? validateUpiId(input.upiId)
+      : current.upiId ?? null
+  const profile: Profile = { ...current, name, email, phone, upiId }
   const profiles = store.profiles.slice()
   profiles[index] = profile
   return { store: { ...store, profiles }, profile }

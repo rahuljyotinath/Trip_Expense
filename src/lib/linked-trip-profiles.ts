@@ -10,7 +10,11 @@ export function linkedProfilesForGroup(store: Store, group: Group): LinkedTripPr
     const profile = store.profiles.find((item) => item.id === profileId)
     if (!profile?.username?.trim()) continue
     seen.add(profileId)
-    out.push({ profileId, ...publicProfileView(profile) })
+    out.push({
+      profileId,
+      ...publicProfileView(profile),
+      upiId: profile.upiId ?? null,
+    })
   }
   out.sort((a, b) => a.name.localeCompare(b.name))
   return out

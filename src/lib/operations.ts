@@ -66,6 +66,7 @@ export function createProfile(store: Store, rawName: string) {
     name,
     email: null,
     phone: null,
+    upiId: null,
     createdAt: nowIso(),
   }
   return {

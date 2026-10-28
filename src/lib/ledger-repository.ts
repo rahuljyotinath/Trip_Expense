@@ -50,6 +50,7 @@ function profileRow(p: Profile) {
     name: n.name,
     email: n.email,
     phone: n.phone,
+    upi_id: n.upiId,
     created_at: n.createdAt,
   }
 }
@@ -61,6 +62,7 @@ function rowToProfile(row: {
   name: string
   email: string | null
   phone: string | null
+  upi_id?: string | null
   created_at: string
 }): Profile {
   return normalizeProfile({
@@ -70,6 +72,7 @@ function rowToProfile(row: {
     name: row.name,
     email: row.email,
     phone: row.phone,
+    upiId: row.upi_id ?? null,
     createdAt: row.created_at,
   })
 }
@@ -733,7 +736,7 @@ async function upsertProfile(sql: Sql, profile: Profile) {
   const row = profileRow(profile)
   await sql`
     INSERT INTO profiles (
-      id, username, password_hash, name, email, phone, created_at
+      id, username, password_hash, name, email, phone, upi_id, created_at
     ) VALUES (
       ${row.id},
       ${row.username},
@@ -741,6 +744,7 @@ async function upsertProfile(sql: Sql, profile: Profile) {
       ${row.name},
       ${row.email},
       ${row.phone},
+      ${row.upi_id},
       ${row.created_at}
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -749,6 +753,7 @@ async function upsertProfile(sql: Sql, profile: Profile) {
       name = EXCLUDED.name,
       email = EXCLUDED.email,
       phone = EXCLUDED.phone,
+      upi_id = EXCLUDED.upi_id,
       created_at = EXCLUDED.created_at
   `
 }

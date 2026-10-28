@@ -324,6 +324,7 @@ export async function updateProfileUser(input: {
   name?: string
   email?: string | null
   phone?: string | null
+  upiId?: string | null
 }) {
   const saved = loadSavedProfile()
   if (mode === "unconfigured") {

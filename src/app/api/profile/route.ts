@@ -32,6 +32,7 @@ export async function PATCH(request: Request) {
       name?: string
       email?: string | null
       phone?: string | null
+      upiId?: string | null
     }>(request)
     const result = await updateStore(
       (store) =>
@@ -40,6 +41,7 @@ export async function PATCH(request: Request) {
           name: body.name,
           email: body.email,
           phone: body.phone,
+          upiId: body.upiId,
         }),
       { scope: { kind: "createTrip" } }
     )

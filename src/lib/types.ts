@@ -5,6 +5,7 @@ export type Profile = {
   name: string
   email: string | null
   phone: string | null
+  upiId: string | null
   createdAt: string
 }
 
@@ -18,6 +19,7 @@ export type PublicProfileView = Pick<
 
 export type LinkedTripProfile = PublicProfileView & {
   profileId: string
+  upiId: string | null
 }
 
 export type Member = {
@@ -157,6 +159,7 @@ export function normalizeProfile(profile: Profile): Profile {
     passwordHash: profile.passwordHash ?? "",
     email: profile.email ?? null,
     phone: profile.phone ?? null,
+    upiId: profile.upiId ?? null,
   }
 }
 
@@ -168,6 +171,7 @@ export function publicProfile(profile: Profile): PublicProfile {
     name: normalized.name,
     email: normalized.email,
     phone: normalized.phone,
+    upiId: normalized.upiId,
     createdAt: normalized.createdAt,
   }
 }

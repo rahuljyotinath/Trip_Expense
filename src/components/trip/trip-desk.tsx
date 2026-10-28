@@ -55,6 +55,7 @@ import { formatMoney } from "@/lib/money"
 import { suggestedMember } from "@/lib/operations"
 import { isTripAdmin } from "@/lib/trip-invites"
 import { settlementBalances, simplifyDebts } from "@/lib/settle"
+import { buildUpiPayUrl, upiIdForMemberProfile } from "@/lib/upi"
 import { applyGroupPatchOptimistic } from "@/lib/group-patch-optimistic"
 import type { Expense, Group, Payment, PublicProfile } from "@/lib/types"
 
@@ -73,6 +74,10 @@ const PaymentDialog = dynamic(
   { ssr: false }
 )
 
+
+function memberProfileId(group: Group, memberId: string) {
+  return group.members.find((item) => item.id === memberId)?.profileId ?? null
+}
 
 function memberName(group: Group, id: string) {
   return group.members.find((member) => member.id === id)?.name ?? "Unknown"
@@ -259,7 +264,16 @@ export function TripDesk({
               </CardHeader>
             </Card>
           ) : (
-            transfers.map((transfer, index) => (
+            transfers.map((transfer, index) => {
+              const creditorUpi =
+                group.currency === "INR"
+                  ? upiIdForMemberProfile(
+                      linkedProfiles,
+                      memberProfileId(group, transfer.toMemberId)
+                    )
+                  : null
+              const viewerOwes = Boolean(seat && seat.id === transfer.fromMemberId)
+              return (
               <Card
                 key={`${transfer.fromMemberId}-${transfer.toMemberId}`}
                 className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
@@ -280,6 +294,24 @@ export function TripDesk({
                       {formatMoney(transfer.amount, group.currency)}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
+                      {creditorUpi ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => {
+                            const url = buildUpiPayUrl({
+                              payeeAddress: creditorUpi,
+                              payeeName: memberName(group, transfer.toMemberId),
+                              amount: transfer.amount,
+                              note: `Tripzy ${group.name}`.slice(0, 80),
+                            })
+                            window.location.href = url
+                          }}
+                        >
+                          Pay UPI
+                        </Button>
+                      ) : null}
                       {canWrite && profile ? (
                         <Button
                           size="sm"
@@ -308,9 +340,15 @@ export function TripDesk({
                       ) : null}
                     </div>
                   </div>
+                  {group.currency === "INR" && !creditorUpi && viewerOwes ? (
+                    <p className="text-xs text-muted-foreground sm:col-span-2">
+                      Ask {memberName(group, transfer.toMemberId)} to add a UPI ID in profile for
+                      one-tap pay.
+                    </p>
+                  ) : null}
                 </CardContent>
               </Card>
-            ))
+            )})
           )}
           {(group.payments ?? []).length > 0 ? (
             <div className="space-y-2">

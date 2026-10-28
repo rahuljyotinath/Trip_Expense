@@ -8,6 +8,7 @@ export function profileFromPublic(pub: PublicProfile): Profile {
     name: pub.name,
     email: pub.email,
     phone: pub.phone,
+    upiId: pub.upiId ?? null,
     createdAt: pub.createdAt,
   }
 }
@@ -68,6 +69,7 @@ export function ensureProfileForPatch(
     name: member.name,
     email: null,
     phone: null,
+    upiId: null,
     createdAt: new Date(0).toISOString(),
   })
 }

@@ -1,4 +1,6 @@
-# Waybill B2B — pricing one-pager (India)
+# Tripzy for operators — pricing one-pager (India)
+
+Strategy context: [ceo-spec.md](./ceo-spec.md).
 
 **Users never pay.** Businesses pay for roster workflow, export, and brand.
 

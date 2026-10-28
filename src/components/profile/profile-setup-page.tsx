@@ -26,6 +26,7 @@ export function ProfileSetupPage() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [phone, setPhone] = useState("")
+  const [upiId, setUpiId] = useState("")
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +49,7 @@ export function ProfileSetupPage() {
       setName(session.name === session.username ? "" : session.name)
       setEmail(session.email ?? "")
       setPhone(session.phone ?? "")
+      setUpiId(session.upiId ?? "")
       setLoading(false)
     })()
     return () => {
@@ -69,6 +71,7 @@ export function ProfileSetupPage() {
         name: name.trim(),
         email: email.trim() || null,
         phone: phone.trim() || null,
+        upiId: upiId.trim() || null,
       })
       syncProfileToLocalStore(updated)
       const target = returnPath
@@ -146,6 +149,19 @@ export function ProfileSetupPage() {
               placeholder="+91 …"
               onChange={(event) => setPhone(event.target.value)}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="profile-upi">UPI ID (optional)</Label>
+            <Input
+              id="profile-upi"
+              value={upiId}
+              autoComplete="off"
+              placeholder="you@okicici"
+              onChange={(event) => setUpiId(event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Trip mates can open a prefilled UPI pay link when they settle with you.
+            </p>
           </div>
           <Button disabled={busy || !canSubmit} onClick={() => void onSubmit()} size="lg">
             Save profile <ArrowRight />

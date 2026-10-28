@@ -113,6 +113,7 @@ export { Shell } from "@/components/trip/trip-shell"
 export { TripDesk } from "@/components/trip/trip-desk"
 
 type Screen = "boot" | "home" | "create" | "join"
+type CreateKind = "trip" | "group"
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "That failed."
@@ -145,6 +146,7 @@ export function WaybillApp() {
   >([])
   const [friends, setFriends] = useState<Friend[]>([])
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([])
+  const [createKind, setCreateKind] = useState<CreateKind>("trip")
 
   async function refreshGroups(nextProfile: PublicProfile) {
     const list = await fetchMyGroups(nextProfile.id)
@@ -438,6 +440,16 @@ export function WaybillApp() {
             setError(null)
             setPeople(profile.name ? [profile.name] : [])
             setSelectedFriendIds([])
+            setCreateKind("trip")
+            setScreen("create")
+          }}
+          onCreateGroup={() => {
+            setError(null)
+            setPeople(profile.name ? [profile.name] : [])
+            setSelectedFriendIds([])
+            setCreateKind("group")
+            setTripStartDate("")
+            setTripEndDate("")
             setScreen("create")
           }}
           onJoin={() => {
@@ -453,6 +465,14 @@ export function WaybillApp() {
       {screen === "create" && profile ? (
         <CreateTrip
           profile={profile}
+          createKind={createKind}
+          onCreateKind={(kind) => {
+            setCreateKind(kind)
+            if (kind === "group") {
+              setTripStartDate("")
+              setTripEndDate("")
+            }
+          }}
           tripName={tripName}
           currency={currency}
           startDate={tripStartDate}
@@ -563,6 +583,7 @@ function Home({
   onInviteAccept,
   onInviteDecline,
   onCreate,
+  onCreateGroup,
   onJoin,
   onOpen,
 }: {
@@ -576,6 +597,7 @@ function Home({
   onInviteAccept: (inviteId: string) => void
   onInviteDecline: (inviteId: string) => void
   onCreate: () => void
+  onCreateGroup: () => void
   onJoin: () => void
   onOpen: (id: string) => void
 }) {
@@ -642,13 +664,20 @@ function Home({
           names. Nobody floats unattached.
         </p>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground/90">
-          Goa, wedding, family yatra — trip khatam, hisaab clear. No app fee.
+          Goa, wedding, flat lunch club — hisaab clear. No app fee.{" "}
+          <Link href="/vs-splitwise" className="underline underline-offset-4">
+            vs Splitwise
+          </Link>
         </p>
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Button size="lg" onClick={onCreate}>
           <Compass className="size-4" />
           Open a trip
+        </Button>
+        <Button size="lg" variant="secondary" onClick={onCreateGroup}>
+          <Users className="size-4" />
+          Ongoing group
         </Button>
         <Button size="lg" variant="outline" onClick={onJoin}>
           <KeyRound className="size-4" />
@@ -764,6 +793,17 @@ function Home({
           ))}
         </div>
       )}
+      <nav className="flex flex-wrap gap-x-4 gap-y-1 pt-4 text-xs text-muted-foreground">
+        <Link href="/for-operators" className="underline underline-offset-4">
+          For operators
+        </Link>
+        <Link href="/privacy" className="underline underline-offset-4">
+          Privacy
+        </Link>
+        <Link href="/terms" className="underline underline-offset-4">
+          Terms
+        </Link>
+      </nav>
     </div>
   )
 }
@@ -784,6 +824,8 @@ function EmptyTrips() {
 
 function CreateTrip({
   profile,
+  createKind,
+  onCreateKind,
   tripName,
   currency,
   startDate,
@@ -805,6 +847,8 @@ function CreateTrip({
   onSubmit,
 }: {
   profile: PublicProfile
+  createKind: CreateKind
+  onCreateKind: (kind: CreateKind) => void
   tripName: string
   currency: string
   startDate: string
@@ -838,14 +882,18 @@ function CreateTrip({
   const rosterOthers = selectedFriendIds.length + manualOthers + draftExtra
   const canWrite = Boolean(tripName.trim()) && rosterOthers >= 1
 
+  const isGroup = createKind === "group"
+
   return (
     <Card className="max-w-xl">
       <CardHeader>
-        <CardTitle className="font-heading text-3xl">Name the trip.</CardTitle>
+        <CardTitle className="font-heading text-3xl">
+          {isGroup ? "Name the group." : "Name the trip."}
+        </CardTitle>
         <CardDescription>
-          Be specific. “Goa Diwali 2026” settles. “Goa” fights with the next
-          Goa. Nicknames on the roster — two Rahuls? Call one Rahul K. They
-          claim those seats later.
+          {isGroup
+            ? "Flatmates, office lunch crew, standing IOUs — no end date. Same roster and settle as a trip."
+            : "Be specific. “Goa Diwali 2026” settles. “Goa” fights with the next Goa. Nicknames on the roster — two Rahuls? Call one Rahul K."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -856,12 +904,30 @@ function CreateTrip({
             if (canWrite && !busy) onSubmit()
           }}
         >
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={createKind === "trip" ? "default" : "outline"}
+            onClick={() => onCreateKind("trip")}
+          >
+            Trip
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={createKind === "group" ? "default" : "outline"}
+            onClick={() => onCreateKind("group")}
+          >
+            Ongoing group
+          </Button>
+        </div>
         <div className="space-y-2">
-          <Label htmlFor="trip-name">Trip</Label>
+          <Label htmlFor="trip-name">{isGroup ? "Group" : "Trip"}</Label>
           <Input
             id="trip-name"
             value={tripName}
-            placeholder="Manali long weekend"
+            placeholder={isGroup ? "Flat 402 / Office lunch" : "Manali long weekend"}
             onChange={(event) => onTripName(event.target.value)}
           />
         </div>
@@ -880,26 +946,32 @@ function CreateTrip({
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="trip-start">Start (optional)</Label>
-            <Input
-              id="trip-start"
-              type="date"
-              value={startDate}
-              onChange={(event) => onStartDate(event.target.value)}
-            />
+        {!isGroup ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="trip-start">Start (optional)</Label>
+              <Input
+                id="trip-start"
+                type="date"
+                value={startDate}
+                onChange={(event) => onStartDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="trip-end">End (optional)</Label>
+              <Input
+                id="trip-end"
+                type="date"
+                value={endDate}
+                onChange={(event) => onEndDate(event.target.value)}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="trip-end">End (optional)</Label>
-            <Input
-              id="trip-end"
-              type="date"
-              value={endDate}
-              onChange={(event) => onEndDate(event.target.value)}
-            />
-          </div>
-        </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Ongoing groups skip dates — use this for flatmates, dinners, and long-running splits.
+          </p>
+        )}
         {friends.length > 0 ? (
           <div className="space-y-2">
             <Label>Friends on this trip</Label>
