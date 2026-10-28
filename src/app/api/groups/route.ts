@@ -1,10 +1,17 @@
 import { profileFromId } from "@/lib/auth-ops"
-import { readStore, storageMode, updateStore } from "@/lib/db"
+import {
+  readGroupByCode,
+  readGroupsForProfile,
+  readStoreLedgerMeta,
+  storageMode,
+  updateStore,
+} from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
 import { joinRequestForProfile } from "@/lib/trip-invites"
-import { createGroup, groupByCode, groupsForProfile } from "@/lib/operations"
+import { createGroup } from "@/lib/operations"
+import { emptyStore } from "@/lib/types"
 
 export async function GET(request: Request) {
   if (storageMode() === "unconfigured") {
@@ -19,10 +26,11 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code")
   try {
     await connection()
-    const store = await readStore()
     if (code) {
-      const group = groupByCode(store, code)
+      const group = await readGroupByCode(code)
       if (!group) return json({ error: "No trip uses that code." }, 404)
+      const meta = await readStoreLedgerMeta()
+      const store = { ...emptyStore(), groups: [group], joinRequests: meta.joinRequests }
       const joinRequest = joinRequestForProfile(store, group.id, sessionId)
       return json({ group, joinRequest })
     }
@@ -30,7 +38,7 @@ export async function GET(request: Request) {
     if (profileId !== sessionId) {
       return json({ error: "Forbidden." }, 403)
     }
-    return json({ groups: groupsForProfile(store, profileId) })
+    return json({ groups: await readGroupsForProfile(profileId) })
   } catch (error) {
     return fail(error)
   }
@@ -53,7 +61,8 @@ export async function POST(request: Request) {
       memberNames?: string[]
       createdByProfileId?: string
     }>(request)
-    const result = await updateStore((store) => {
+    const result = await updateStore(
+      (store) => {
       if (!profileFromId(store, sessionId)) {
         throw new Error("Sign in again — your account is not on the ledger.")
       }
@@ -65,7 +74,9 @@ export async function POST(request: Request) {
         memberNames: body.memberNames ?? [],
         createdByProfileId: sessionId,
       })
-    })
+    },
+      { scope: { kind: "createTrip" } }
+    )
     return json({ group: result.group })
   } catch (error) {
     return fail(error)

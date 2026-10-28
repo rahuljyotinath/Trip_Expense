@@ -75,6 +75,10 @@ export type Health = {
   error?: string | null
   ledgerVersion?: number | null
   ledgerDataBytes?: number | null
+  profileCount?: number | null
+  tripCount?: number | null
+  expenseCount?: number | null
+  paymentCount?: number | null
   sessionReady?: boolean
 }
 

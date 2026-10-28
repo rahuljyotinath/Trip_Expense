@@ -26,16 +26,22 @@ Repo: [rahuljyotinath/Trip_Expense](https://github.com/rahuljyotinath/Trip_Expen
 
 1. Vercel → import `rahuljyotinath/Trip_Expense`, production branch **main**.
 2. Connect **Supabase** so Vercel sets `POSTGRES_URL`.
-3. In the Supabase SQL editor, run [`supabase/migrations/001_ledger_store.sql`](supabase/migrations/001_ledger_store.sql).
-4. One-time import from a **local** JSON file (not in git):
+3. **Relational ledger (recommended):** with `POSTGRES_URL` in `.env.local` or the shell:
+
+```bash
+npm run db:migrate-relational
+```
+
+This applies [`001`](supabase/migrations/001_ledger_store.sql) + [`002`](supabase/migrations/002_relational_ledger.sql) if needed, then copies `ledger_store.data` into normalized tables. Or run SQL in Supabase, then `POSTGRES_URL=... npx tsx scripts/migrate-blob-to-relational.ts`.
+
+4. **Legacy blob-only import** from a local JSON file (not in git):
 
 ```bash
 POSTGRES_URL=... npm run db:import
-# or: POSTGRES_URL=... npx tsx scripts/import-ledger-to-postgres.ts path/to/store.json
 ```
 
 5. Set `SESSION_SECRET` for sign-in cookies (recommended).
-6. Deploy. `/api/health` should report `mode: "postgres"`, `connected: true`, and `sessionReady: true`.
+6. Deploy. `/api/health` should report `mode: "postgres"`, `connected: true`, and `tripCount` after relational migration.
 
 Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
 

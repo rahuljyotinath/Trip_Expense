@@ -1,4 +1,4 @@
-import { readStore, storageMode } from "@/lib/db"
+import { readProfileForSession, storageMode } from "@/lib/db"
 import { fail, json } from "@/lib/http"
 import { sessionProfileId } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
@@ -17,8 +17,7 @@ export async function GET(request: Request) {
     return json({ error: "Forbidden." }, 403)
   }
   try {
-    const store = await readStore()
-    const profile = store.profiles.find((item) => item.id === id)
+    const profile = await readProfileForSession(id)
     if (!profile) return json({ error: "Profile not found." }, 404)
     return json({ profile: publicProfile(profile) })
   } catch (error) {

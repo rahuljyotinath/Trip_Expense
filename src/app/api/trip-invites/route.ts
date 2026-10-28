@@ -1,4 +1,9 @@
-import { readStore, storageMode } from "@/lib/db"
+import {
+  readProfileForSession,
+  readStoreForTripInvites,
+  readStoreLedgerMeta,
+  storageMode,
+} from "@/lib/db"
 import { fail, json } from "@/lib/http"
 import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
@@ -19,9 +24,9 @@ export async function GET() {
   }
   try {
     await connection()
-    const store = await readStore()
-    const profile = profileFromId(store, sessionId)
+    const profile = await readProfileForSession(sessionId)
     if (!profile) return json({ error: "Sign in again." }, 401)
+    const store = await readStoreForTripInvites(profile)
     const invites = pendingInvitesForProfile(store, publicProfile(profile)).map((invite) => ({
       ...invite,
       tripName: groupNameById(store, invite.groupId),
@@ -42,7 +47,13 @@ export async function POST(request: Request) {
   }
   try {
     const body = await readBody<{ action?: string; inviteId?: string }>(request)
-    const result = await updateStore((store) => {
+    const meta = await readStoreLedgerMeta()
+    const invite = (meta.tripInvites ?? []).find((item) => item.id === body.inviteId)
+    const scope = invite
+      ? ({ kind: "trip", tripId: invite.groupId } as const)
+      : ({ kind: "createTrip" } as const)
+    const result = await updateStore(
+      (store) => {
       if (body.action === "accept") {
         return acceptTripInvite(store, {
           inviteId: body.inviteId ?? "",
@@ -64,7 +75,9 @@ export async function POST(request: Request) {
         return { store: declined.store, group }
       }
       throw new Error("Unknown action.")
-    })
+    },
+      { scope }
+    )
     return json({ group: result.group })
   } catch (error) {
     return fail(error)

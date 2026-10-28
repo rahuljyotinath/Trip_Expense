@@ -107,7 +107,8 @@ export async function PATCH(
       isAdmin?: boolean
     }>(request)
 
-    const result = await updateStore((store) => {
+    const result = await updateStore(
+      (store) => {
       const requireSessionProfile = () => {
         const profile = profileFromId(store, sessionId)
         if (!profile) {
@@ -288,7 +289,9 @@ export async function PATCH(
         })
       }
       throw new Error("Unknown action.")
-    })
+    },
+      { scope: { kind: "trip", tripId: id } }
+    )
     return json({ group: result.group })
   } catch (error) {
     return fail(error)

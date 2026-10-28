@@ -1,4 +1,4 @@
-import { readStore, storageMode, updateStore } from "@/lib/db"
+import { readStoreForContacts, storageMode, updateStore } from "@/lib/db"
 import { fail, json, readBody } from "@/lib/http"
 import { addContact, removeContact } from "@/lib/operations"
 import { contactListFromEnriched } from "@/lib/contact-list"
@@ -16,7 +16,7 @@ export async function GET() {
   }
   try {
     await connection()
-    const store = await readStore()
+    const store = await readStoreForContacts()
     const contacts = contactListFromEnriched(
       listContactsForProfile(store, sessionId)
     )
@@ -41,22 +41,26 @@ export async function POST(request: Request) {
       targetProfileId?: string
     }>(request)
     if (body.action === "remove") {
-      const result = await updateStore((store) =>
-        removeContact(store, {
-          ownerProfileId: sessionId,
-          targetProfileId: body.targetProfileId ?? "",
-        })
+      const result = await updateStore(
+        (store) =>
+          removeContact(store, {
+            ownerProfileId: sessionId,
+            targetProfileId: body.targetProfileId ?? "",
+          }),
+        { scope: { kind: "createTrip" } }
       )
       return json({
         contacts: contactListFromEnriched(result.contacts),
       })
     }
-    const result = await updateStore((store) =>
-      addContact(store, {
-        ownerProfileId: sessionId,
-        query: body.query,
-        targetProfileId: body.targetProfileId,
-      })
+    const result = await updateStore(
+      (store) =>
+        addContact(store, {
+          ownerProfileId: sessionId,
+          query: body.query,
+          targetProfileId: body.targetProfileId,
+        }),
+      { scope: { kind: "createTrip" } }
     )
     return json({ contacts: contactListFromEnriched(result.contacts) })
   } catch (error) {

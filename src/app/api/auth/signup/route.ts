@@ -16,12 +16,14 @@ export async function POST(request: Request) {
       password?: string
       name?: string
     }>(request)
-    const result = await updateStore((store) =>
-      signUp(store, {
-        username: body.username ?? "",
-        password: body.password ?? "",
-        name: body.name,
-      })
+    const result = await updateStore(
+      (store) =>
+        signUp(store, {
+          username: body.username ?? "",
+          password: body.password ?? "",
+          name: body.name,
+        }),
+      { scope: { kind: "createTrip" } }
     )
     await setSessionProfile(result.profile.id)
     return json({ profile: publicProfile(result.profile) })

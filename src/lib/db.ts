@@ -1,6 +1,25 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
+import { isRelationalLedger } from "./ledger-backend"
+import {
+  importStoreToRelational,
+  loadAllProfiles,
+  loadContacts,
+  loadFullStoreRelational,
+  loadGroupByCodeRelational,
+  loadGroupRelational,
+  loadGroupsForProfileRelational,
+  loadJoinRequests,
+  loadProfilesByIdsRelational,
+  loadStoreForMutationRelational,
+  loadTripInvites,
+  persistStoreDiffRelational,
+  readLedgerStatsRelational,
+  type MutationScope,
+  type RelationalLoadState,
+  type Sql,
+} from "./ledger-repository"
 import {
   emptyStore,
   normalizeGroup,
@@ -16,6 +35,7 @@ import { postgresConfig, storageMode } from "./storage-mode"
 import { storesEqual } from "./store-compare"
 
 export { postgresConfig, storageMode } from "./storage-mode"
+export type { MutationScope } from "./ledger-repository"
 
 const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
 const LEDGER_ROW_ID = "main"
@@ -26,6 +46,7 @@ const LOAD_CACHE_MS =
 type Loaded = {
   store: Store
   version?: number
+  relational?: RelationalLoadState
 }
 
 export type PostgresProbe = {
@@ -34,22 +55,22 @@ export type PostgresProbe = {
   version?: number
 }
 
-let queue: Promise<unknown> = Promise.resolve()
+let writeQueue: Promise<unknown> = Promise.resolve()
 
 let loadCache: { loaded: Loaded; at: number } | null = null
 
-let postgresClient: ReturnType<typeof postgres> | null = null
+let postgresClient: Sql | null = null
 
-function enqueue<T>(job: () => Promise<T>) {
-  const run = queue.then(job, job)
-  queue = run.then(
+function enqueueWrite<T>(job: () => Promise<T>) {
+  const run = writeQueue.then(job, job)
+  writeQueue = run.then(
     () => undefined,
     () => undefined
   )
   return run
 }
 
-function getPostgres() {
+export function getSql(): Sql {
   const url = postgresConfig()
   if (!url) throw new Error("Postgres is not configured.")
   if (!postgresClient) {
@@ -90,7 +111,14 @@ export async function probePostgres(): Promise<PostgresProbe> {
     return { connected: false, error: "Set POSTGRES_URL or DATABASE_URL." }
   }
   try {
-    const sql = getPostgres()
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const rows = await sql<{ version: string }[]>`
+        SELECT version FROM ledger_meta WHERE id = ${LEDGER_ROW_ID}
+      `
+      const version = rows[0] ? Number(rows[0].version) : undefined
+      return { connected: true, error: null, version }
+    }
     const rows = await sql<{ version: string }[]>`
       SELECT version FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
     `
@@ -108,6 +136,9 @@ function asStore(value: unknown): Store {
   return normalizeStore({
     profiles: Array.isArray(record.profiles) ? record.profiles : [],
     groups: Array.isArray(record.groups) ? record.groups : [],
+    joinRequests: record.joinRequests,
+    tripInvites: record.tripInvites,
+    contacts: record.contacts,
   })
 }
 
@@ -128,8 +159,8 @@ async function writeLocal(store: Store) {
   await fs.writeFile(LOCAL_PATH, `${JSON.stringify(store, null, 2)}\n`, "utf8")
 }
 
-async function readPostgres(): Promise<Loaded> {
-  const sql = getPostgres()
+async function readPostgresBlob(): Promise<Loaded> {
+  const sql = getSql()
   const rows = await sql<{ data: Store; version: string }[]>`
     SELECT data, version FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
   `
@@ -142,8 +173,8 @@ async function readPostgres(): Promise<Loaded> {
   }
 }
 
-async function writePostgres(store: Store, expectedVersion: number) {
-  const sql = getPostgres()
+async function writePostgresBlob(store: Store, expectedVersion: number) {
+  const sql = getSql()
   const payload = JSON.parse(JSON.stringify(store))
 
   if (expectedVersion === 0) {
@@ -172,26 +203,75 @@ async function writePostgres(store: Store, expectedVersion: number) {
   }
 }
 
-async function load(force = false): Promise<Loaded> {
+async function loadBlob(force = false): Promise<Loaded> {
   if (!force) {
     const cached = peekFreshLoadCache()
     if (cached) return cached
   }
-  const mode = storageMode()
-  const loaded = mode === "postgres" ? await readPostgres() : await readLocal()
+  const loaded = await readPostgresBlob()
   setLoadCache(loaded)
   return loaded
 }
 
-async function save(store: Store, loaded: Loaded) {
+async function loadRelational(force = false): Promise<Loaded> {
+  if (!force) {
+    const cached = peekFreshLoadCache()
+    if (cached?.relational) return cached
+  }
+  const sql = getSql()
+  const relational = await loadFullStoreRelational(sql)
+  const loaded: Loaded = {
+    store: relational.store,
+    relational,
+    version: relational.metaVersion,
+  }
+  setLoadCache(loaded)
+  return loaded
+}
+
+async function load(force = false): Promise<Loaded> {
   const mode = storageMode()
-  if (mode === "postgres") {
-    await writePostgres(store, loaded.version ?? 0)
-    invalidateLoadCache()
+  if (mode === "local") {
+    if (!force) {
+      const cached = peekFreshLoadCache()
+      if (cached) return cached
+    }
+    const loaded = await readLocal()
+    setLoadCache(loaded)
+    return loaded
+  }
+  const sql = getSql()
+  if (await isRelationalLedger(sql)) {
+    return loadRelational(force)
+  }
+  return loadBlob(force)
+}
+
+async function saveBlob(store: Store, loaded: Loaded) {
+  await writePostgresBlob(store, loaded.version ?? 0)
+  invalidateLoadCache()
+}
+
+async function saveRelational(before: Store, after: Store, loaded: Loaded) {
+  if (!loaded.relational) throw new Error("Relational load state missing.")
+  const sql = getSql()
+  await persistStoreDiffRelational(sql, before, after, loaded.relational)
+  invalidateLoadCache()
+}
+
+async function save(before: Store, after: Store, loaded: Loaded) {
+  const mode = storageMode()
+  if (mode === "local") {
+    await writeLocal(after)
+    setLoadCache({ store: after })
     return
   }
-  await writeLocal(store)
-  setLoadCache({ store })
+  const sql = getSql()
+  if (await isRelationalLedger(sql)) {
+    await saveRelational(before, after, loaded)
+    return
+  }
+  await saveBlob(after, loaded)
 }
 
 export async function readStore() {
@@ -203,79 +283,21 @@ export async function readStoreFresh() {
   return (await load(true)).store
 }
 
-function profilesFromUnknown(value: unknown): Profile[] {
-  if (!Array.isArray(value)) return []
-  return value.map((item) => normalizeProfile(item as Profile))
-}
-
-async function readPostgresProfiles(): Promise<Profile[]> {
-  const sql = getPostgres()
-  const rows = await sql<{ profiles: unknown }[]>`
-    SELECT data->'profiles' AS profiles FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
-  `
-  if (rows.length === 0) return []
-  return profilesFromUnknown(rows[0]!.profiles)
-}
-
-async function readPostgresProfileById(profileId: string): Promise<Profile | null> {
-  const sql = getPostgres()
-  const rows = await sql<{ profile: Profile }[]>`
-    SELECT elem AS profile
-    FROM ledger_store,
-      jsonb_array_elements(data->'profiles') AS elem
-    WHERE ledger_store.id = ${LEDGER_ROW_ID}
-      AND elem->>'id' = ${profileId}
-    LIMIT 1
-  `
-  const row = rows[0]?.profile
-  return row ? normalizeProfile(row) : null
-}
-
-async function readPostgresGroupById(groupId: string): Promise<Group | null> {
-  const sql = getPostgres()
-  const rows = await sql<{ trip: Group }[]>`
-    SELECT elem AS trip
-    FROM ledger_store,
-      jsonb_array_elements(data->'groups') AS elem
-    WHERE ledger_store.id = ${LEDGER_ROW_ID}
-      AND elem->>'id' = ${groupId}
-    LIMIT 1
-  `
-  const row = rows[0]?.trip
-  return row ? normalizeGroup(row) : null
-}
-
 export type StoreLedgerMeta = {
   joinRequests: JoinRequest[]
   tripInvites: TripInvite[]
 }
 
-function parseJoinRequests(value: unknown): JoinRequest[] {
-  if (!Array.isArray(value)) return []
-  return (
-    normalizeStore({
-      profiles: [],
-      groups: [],
-      joinRequests: value as JoinRequest[],
-    }).joinRequests ?? []
-  )
-}
-
-function parseTripInvites(value: unknown): TripInvite[] {
-  if (!Array.isArray(value)) return []
-  return (
-    normalizeStore({
-      profiles: [],
-      groups: [],
-      tripInvites: value as TripInvite[],
-    }).tripInvites ?? []
-  )
-}
-
-/** Join requests + trip invites only (not full groups/expenses blob). */
 export async function readStoreLedgerMeta(): Promise<StoreLedgerMeta> {
   if (storageMode() === "postgres") {
-    const sql = getPostgres()
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const [joinRequests, tripInvites] = await Promise.all([
+        loadJoinRequests(sql),
+        loadTripInvites(sql),
+      ])
+      return { joinRequests, tripInvites }
+    }
     const rows = await sql<{ join_requests: unknown; trip_invites: unknown }[]>`
       SELECT
         data->'joinRequests' AS join_requests,
@@ -286,9 +308,15 @@ export async function readStoreLedgerMeta(): Promise<StoreLedgerMeta> {
     if (rows.length === 0) {
       return { joinRequests: [], tripInvites: [] }
     }
+    const store = normalizeStore({
+      profiles: [],
+      groups: [],
+      joinRequests: rows[0]!.join_requests as JoinRequest[],
+      tripInvites: rows[0]!.trip_invites as TripInvite[],
+    })
     return {
-      joinRequests: parseJoinRequests(rows[0]!.join_requests),
-      tripInvites: parseTripInvites(rows[0]!.trip_invites),
+      joinRequests: store.joinRequests ?? [],
+      tripInvites: store.tripInvites ?? [],
     }
   }
   const store = await readStore()
@@ -298,12 +326,14 @@ export async function readStoreLedgerMeta(): Promise<StoreLedgerMeta> {
   }
 }
 
-/** Profiles referenced on a trip (roster + join flow), not the full ledger. */
 export async function readProfilesByIds(ids: string[]): Promise<Profile[]> {
   const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
   if (unique.length === 0) return []
   if (storageMode() === "postgres") {
-    const sql = getPostgres()
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadProfilesByIdsRelational(sql, unique)
+    }
     const rows = await sql<{ profile: Profile }[]>`
       SELECT elem AS profile
       FROM ledger_store,
@@ -318,70 +348,261 @@ export async function readProfilesByIds(ids: string[]): Promise<Profile[]> {
   return store.profiles.filter((item) => wanted.has(item.id))
 }
 
-/** Approximate JSON payload size for ops / health (Postgres only). */
-export async function readLedgerDataByteSize(): Promise<number | null> {
+export type LedgerHealthStats = {
+  ledgerDataBytes: number | null
+  profileCount: number | null
+  tripCount: number | null
+  expenseCount: number | null
+  paymentCount: number | null
+}
+
+export async function readLedgerHealthStats(): Promise<LedgerHealthStats | null> {
   if (storageMode() !== "postgres") return null
   try {
-    const sql = getPostgres()
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const stats = await readLedgerStatsRelational(sql)
+      if (!stats) return null
+      return {
+        ledgerDataBytes: stats.blob_bytes,
+        profileCount: Number(stats.profiles),
+        tripCount: Number(stats.trips),
+        expenseCount: Number(stats.expenses),
+        paymentCount: Number(stats.payments),
+      }
+    }
     const rows = await sql<{ bytes: number }[]>`
       SELECT octet_length(data::text)::int AS bytes
       FROM ledger_store
       WHERE id = ${LEDGER_ROW_ID}
     `
-    return rows[0]?.bytes ?? null
+    return {
+      ledgerDataBytes: rows[0]?.bytes ?? null,
+      profileCount: null,
+      tripCount: null,
+      expenseCount: null,
+      paymentCount: null,
+    }
   } catch {
     return null
   }
 }
 
-/** Trip GET: one group row when on Postgres (avoids loading full ledger). */
+/** @deprecated Use readLedgerHealthStats */
+export async function readLedgerDataByteSize(): Promise<number | null> {
+  const stats = await readLedgerHealthStats()
+  return stats?.ledgerDataBytes ?? null
+}
+
 export async function readGroupById(id: string): Promise<Group | null> {
   const groupId = id.trim()
   if (!groupId) return null
   if (storageMode() === "postgres") {
-    return readPostgresGroupById(groupId)
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadGroupRelational(sql, groupId)
+    }
+    const rows = await sql<{ trip: Group }[]>`
+      SELECT elem AS trip
+      FROM ledger_store,
+        jsonb_array_elements(data->'groups') AS elem
+      WHERE ledger_store.id = ${LEDGER_ROW_ID}
+        AND elem->>'id' = ${groupId}
+      LIMIT 1
+    `
+    const row = rows[0]?.trip
+    return row ? normalizeGroup(row) : null
   }
   const store = await readStore()
   return store.groups.find((item) => item.id === groupId) ?? null
 }
 
-/** Auth login: profiles only (avoids loading full trip ledger). */
+export async function readGroupsForProfile(profileId: string): Promise<Group[]> {
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadGroupsForProfileRelational(sql, profileId)
+    }
+  }
+  const store = await readStore()
+  return store.groups.filter((group) =>
+    group.members.some((member) => member.profileId === profileId)
+  )
+}
+
+export async function readGroupByCode(code: string): Promise<Group | null> {
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      return loadGroupByCodeRelational(sql, code)
+    }
+  }
+  const store = await readStore()
+  const normalized = code.replace(/\s+/g, "").toUpperCase()
+  return store.groups.find((group) => group.code === normalized) ?? null
+}
+
+/** Profiles + contacts for contact list (no trips). */
+export async function readStoreForContacts(): Promise<Store> {
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const [profiles, contacts] = await Promise.all([
+        loadAllProfiles(sql),
+        loadContacts(sql),
+      ])
+      return normalizeStore({ profiles, groups: [], contacts })
+    }
+  }
+  return readStore()
+}
+
+/** All profiles for username / email / phone search. */
+export async function readStoreForProfileSearch(): Promise<Store> {
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const profiles = await loadAllProfiles(sql)
+      return normalizeStore({ profiles, groups: [] })
+    }
+  }
+  return readStore()
+}
+
+/** Invites list: session profile, meta, trip name stubs. */
+export async function readStoreForTripInvites(sessionProfile: Profile): Promise<Store> {
+  if (storageMode() === "postgres") {
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const meta = await readStoreLedgerMeta()
+      const groupIds = [...new Set((meta.tripInvites ?? []).map((item) => item.groupId))]
+      const groups: Group[] = []
+      for (const groupId of groupIds) {
+        const header = await sql<
+          { id: string; name: string; code: string }[]
+        >`SELECT id, name, code FROM trips WHERE id = ${groupId}`
+        const row = header[0]
+        if (row) {
+          groups.push(
+            normalizeGroup({
+              id: row.id,
+              name: row.name,
+              code: row.code,
+              currency: "INR",
+              startDate: null,
+              endDate: null,
+              createdByProfileId: "",
+              createdAt: "",
+              members: [],
+              expenses: [],
+              payments: [],
+            })
+          )
+        }
+      }
+      return normalizeStore({
+        profiles: [sessionProfile],
+        groups,
+        joinRequests: meta.joinRequests,
+        tripInvites: meta.tripInvites,
+      })
+    }
+  }
+  return readStore()
+}
+
 export async function readProfilesForAuth(): Promise<Store> {
   const mode = storageMode()
   if (mode === "postgres") {
-    const profiles = await readPostgresProfiles()
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const profiles = await loadAllProfiles(sql)
+      return normalizeStore({ profiles, groups: [] })
+    }
+    const rows = await sql<{ profiles: unknown }[]>`
+      SELECT data->'profiles' AS profiles FROM ledger_store WHERE id = ${LEDGER_ROW_ID}
+    `
+    if (rows.length === 0) return normalizeStore({ profiles: [], groups: [] })
+    const profiles = Array.isArray(rows[0]!.profiles)
+      ? (rows[0]!.profiles as Profile[]).map(normalizeProfile)
+      : []
     return normalizeStore({ profiles, groups: [] })
   }
   const store = await readStore()
   return normalizeStore({ profiles: store.profiles, groups: [] })
 }
 
-/** Session restore: one profile row when on Postgres. */
 export async function readProfileForSession(profileId: string): Promise<Profile | null> {
   const id = profileId.trim()
   if (!id) return null
   if (storageMode() === "postgres") {
-    return readPostgresProfileById(id)
+    const sql = getSql()
+    if (await isRelationalLedger(sql)) {
+      const rows = await loadProfilesByIdsRelational(sql, [id])
+      return rows[0] ?? null
+    }
+    const rows = await sql<{ profile: Profile }[]>`
+      SELECT elem AS profile
+      FROM ledger_store,
+        jsonb_array_elements(data->'profiles') AS elem
+      WHERE ledger_store.id = ${LEDGER_ROW_ID}
+        AND elem->>'id' = ${id}
+      LIMIT 1
+    `
+    const row = rows[0]?.profile
+    return row ? normalizeProfile(row) : null
   }
   const store = await readStore()
   return store.profiles.find((item) => item.id === id) ?? null
 }
 
-export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) {
-  return enqueue(async () => {
+export type UpdateStoreOptions = {
+  scope?: MutationScope
+}
+
+async function loadForMutation(
+  scope: MutationScope | undefined,
+  force: boolean
+): Promise<Loaded> {
+  const mode = storageMode()
+  if (mode === "local") {
+    return load(force)
+  }
+  const sql = getSql()
+  if (!(await isRelationalLedger(sql))) {
+    return loadBlob(force)
+  }
+  const relational = await loadStoreForMutationRelational(
+    sql,
+    scope ?? { kind: "createTrip" }
+  )
+  return {
+    store: relational.store,
+    relational,
+    version: relational.metaVersion,
+  }
+}
+
+export async function updateStore<T>(
+  mutator: (store: Store) => T | Promise<T>,
+  options?: UpdateStoreOptions
+) {
+  return enqueueWrite(async () => {
     let lastError: unknown
+    const scope = options?.scope
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const loaded = await load(attempt > 0)
-      const result = await mutator(loaded.store)
+      const loaded = await loadForMutation(scope, attempt > 0)
+      const before = loaded.store
+      const result = await mutator(before)
       const next =
         result && typeof result === "object" && "store" in result
           ? (result as { store: Store }).store
-          : loaded.store
-      if (storesEqual(next, loaded.store)) {
+          : before
+      if (storesEqual(next, before)) {
         return result
       }
       try {
-        await save(next, loaded)
+        await save(before, next, loaded)
         return result
       } catch (error) {
         lastError = error
@@ -391,6 +612,12 @@ export async function updateStore<T>(mutator: (store: Store) => T | Promise<T>) 
     }
     throw lastError instanceof Error ? lastError : new Error("Could not save the ledger.")
   })
+}
+
+export async function migrateBlobToRelationalTables(store: Store) {
+  const sql = getSql()
+  await importStoreToRelational(sql, store)
+  invalidateLoadCache()
 }
 
 export function storageErrorMessage(postgres?: PostgresProbe) {

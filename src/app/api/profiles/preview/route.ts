@@ -1,4 +1,4 @@
-import { readStore, storageMode } from "@/lib/db"
+import { readStoreForProfileSearch, storageMode } from "@/lib/db"
 import { fail, json } from "@/lib/http"
 import { findProfileForContactSearch } from "@/lib/trip-contacts"
 import { publicProfileView } from "@/lib/types"
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   }
   try {
     await connection()
-    const store = await readStore()
+    const store = await readStoreForProfileSearch()
     const match = findProfileForContactSearch(store, q)
     if (!match?.username?.trim()) {
       return json({ profile: null })

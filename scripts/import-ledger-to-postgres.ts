@@ -8,6 +8,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
+import { importStoreToRelational } from "../src/lib/ledger-repository"
 import { emptyStore, normalizeStore, type Store } from "../src/lib/types"
 
 const LEDGER_ROW_ID = "main"
@@ -19,6 +20,9 @@ function asStore(value: unknown): Store {
   return normalizeStore({
     profiles: Array.isArray(record.profiles) ? record.profiles : [],
     groups: Array.isArray(record.groups) ? record.groups : [],
+    joinRequests: record.joinRequests,
+    tripInvites: record.tripInvites,
+    contacts: record.contacts,
   })
 }
 
@@ -62,6 +66,15 @@ async function main() {
   console.log(
     `Imported ${store.profiles.length} profiles, ${store.groups.length} groups from ${source} (version ${rows[0]?.version ?? "?"}).`
   )
+  try {
+    await importStoreToRelational(sql, store)
+    console.log("Relational tables populated (requires migration 002).")
+  } catch (error) {
+    console.warn(
+      "Relational import skipped — apply supabase/migrations/002_relational_ledger.sql first.",
+      error instanceof Error ? error.message : error
+    )
+  }
   await sql.end({ timeout: 5 })
 }
 

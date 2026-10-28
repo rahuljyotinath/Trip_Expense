@@ -2,13 +2,19 @@
 
 ## Ledger size (production)
 
-`GET /api/health` includes **`ledgerDataBytes`** when `mode === "postgres"` (octet length of `ledger_store.data` JSON).
+`GET /api/health` when `mode === "postgres"`:
+
+- **`ledgerDataBytes`** — legacy blob size (if `ledger_store` row still present)
+- **`profileCount`**, **`tripCount`**, **`expenseCount`**, **`paymentCount`** — relational ledger (after migration 002)
 
 ```bash
-curl -sS "$APP_URL/api/health" | jq '{ mode, connected, ledgerDataBytes, ledgerVersion }'
+curl -sS "$APP_URL/api/health" | jq '{
+  mode, connected, ledgerVersion,
+  ledgerDataBytes, tripCount, expenseCount
+}'
 ```
 
-If `ledgerDataBytes` is hundreds of KB or MB, full-blob PATCH/legacy reads dominate latency.
+Relational mode: PATCH cost scales with **one trip’s** expense/payment rows, not `ledgerDataBytes`.
 
 ## Browser (trip open)
 
