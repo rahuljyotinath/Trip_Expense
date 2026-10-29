@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { MarketingShell } from "@/components/marketing/marketing-shell"
 import { Button } from "@/components/ui/button"
+import { getAppDisplayName } from "@/lib/app-display-name"
+
+const brand = getAppDisplayName()
 
 export const metadata = {
-  title: "Tripzy vs Splitwise — India group splits",
+  title: `${brand} vs Splitwise — India group splits`,
   description:
     "Unlimited trip-day spends, no ads, WhatsApp invites. Splitwise alternative for trips and groups in India.",
 }
@@ -28,7 +31,7 @@ export default function VsSplitwisePage() {
         Split trips and groups without Splitwise limits.
       </h1>
       <p className="mt-4 max-w-2xl text-muted-foreground">
-        Tripzy is built for India group trips and ad-hoc splits — Goa weekends, wedding sides,
+        {brand} is built for India group trips and ad-hoc splits — Goa weekends, wedding sides,
         office lunches, flatmate weeks. No daily cap on spends, no ad clutter, roster nicknames
         and settle that match how your group actually travels.
       </p>
@@ -37,7 +40,7 @@ export default function VsSplitwisePage() {
           <thead>
             <tr className="border-b bg-muted/40">
               <th className="px-4 py-3 font-medium">Feature</th>
-              <th className="px-4 py-3 font-medium text-primary">Tripzy</th>
+              <th className="px-4 py-3 font-medium text-primary">{brand}</th>
               <th className="px-4 py-3 font-medium">Splitwise</th>
             </tr>
           </thead>
@@ -53,7 +56,7 @@ export default function VsSplitwisePage() {
         </table>
       </div>
       <p className="mt-6 text-sm text-muted-foreground">
-        Splitwise is strong for long-lived roommate groups and global FX. Tripzy wins on{" "}
+        Splitwise is strong for long-lived roommate groups and global FX. {brand} wins on{" "}
         <strong className="font-medium text-foreground">trip day volume</strong>, India-native
         invite flow, and operator-led trips where everyone should stay on one ledger.
       </p>

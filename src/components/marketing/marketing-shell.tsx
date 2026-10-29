@@ -2,16 +2,18 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
+import { getAppDisplayName } from "@/lib/app-display-name"
 
 export function MarketingShell({
   children,
   ctaHref = "/",
-  ctaLabel = "Open Tripzy",
+  ctaLabel,
 }: {
   children: ReactNode
   ctaHref?: string
   ctaLabel?: string
 }) {
+  const cta = ctaLabel ?? `Open ${getAppDisplayName()}`
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 pb-16">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -19,7 +21,7 @@ export function MarketingShell({
           <BrandMark size="sm" />
         </Link>
         <Button nativeButton={false} render={<Link href={ctaHref} />} size="sm">
-          {ctaLabel}
+          {cta}
         </Button>
       </header>
       {children}

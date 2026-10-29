@@ -113,6 +113,8 @@ function reorderDayItemIds(ids: string[], dragId: string, targetId: string) {
   return next
 }
 
+const APP_BRAND = process.env.NEXT_PUBLIC_APP_DISPLAY_NAME?.trim() || "Tripzy"
+
 export function TripDesk({
   profile,
   group,
@@ -204,9 +206,9 @@ export function TripDesk({
   }
   const [importCsvText, setImportCsvText] = useState<string | null>(null)
   useEffect(() => {
-    document.title = `${group.name} — Tripzy`
+    document.title = `${group.name} — ${APP_BRAND}`
     return () => {
-      document.title = "Tripzy"
+      document.title = APP_BRAND
     }
   }, [group.name])
 
@@ -304,7 +306,7 @@ export function TripDesk({
                               payeeAddress: creditorUpi,
                               payeeName: memberName(group, transfer.toMemberId),
                               amount: transfer.amount,
-                              note: `Tripzy ${group.name}`.slice(0, 80),
+                              note: `${APP_BRAND} ${group.name}`.slice(0, 80),
                             })
                             window.location.href = url
                           }}

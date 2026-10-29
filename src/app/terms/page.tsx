@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { MarketingShell } from "@/components/marketing/marketing-shell"
+import { brandPageTitle, getAppDisplayName } from "@/lib/app-display-name"
+
+const brand = getAppDisplayName()
 
 export const metadata = {
-  title: "Terms — Tripzy",
-  description: "Terms of use for Tripzy.",
+  title: brandPageTitle("Terms"),
+  description: `Terms of use for ${brand}.`,
 }
 
 export default function TermsPage() {
@@ -13,12 +16,12 @@ export default function TermsPage() {
       <p className="mt-2 text-sm text-muted-foreground">Last updated: October 2026</p>
       <div className="prose prose-sm mt-8 max-w-none space-y-4 text-foreground dark:prose-invert">
         <p>
-          Tripzy helps groups record shared expenses and settlements. By using the service you
+          {brand} helps groups record shared expenses and settlements. By using the service you
           agree to use it lawfully and only for personal or authorized business trip accounting.
         </p>
         <h2 className="font-heading text-xl">No payment processing</h2>
         <p>
-          Tripzy does not move money. UPI links open your bank or wallet app; we are not a
+          {brand} does not move money. UPI links open your bank or wallet app; we are not a
           payment service provider. You are responsible for verifying payee details before paying.
         </p>
         <h2 className="font-heading text-xl">Accuracy</h2>

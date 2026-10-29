@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { MarketingShell } from "@/components/marketing/marketing-shell"
 import { Button } from "@/components/ui/button"
+import { getAppDisplayName } from "@/lib/app-display-name"
+
+const brand = getAppDisplayName()
 
 export const metadata = {
-  title: "Tripzy for operators — treks, weddings, offsites",
+  title: `${brand} for operators — treks, weddings, offsites`,
   description:
     "Roster workflow, branded invites, CSV export. Travelers never pay; operators subscribe.",
 }
@@ -41,7 +44,7 @@ export default function ForOperatorsPage() {
         Your travelers never pay. You get the roster workflow.
       </h1>
       <p className="mt-4 max-w-2xl text-muted-foreground">
-        Tripzy keeps the group on one ledger: nicknames, join codes, WhatsApp invites, settle
+        {brand} keeps the group on one ledger: nicknames, join codes, WhatsApp invites, settle
         and mark paid. Operators pay for scale — export, multi-trip ops, and brand on the invite
         link when you need it.
       </p>
@@ -61,7 +64,7 @@ export default function ForOperatorsPage() {
         Self-serve today: trip CSV import/export, invite link + join code. Paid tiers add org
         dashboard, custom invite domain, and aggregate analytics. Strategy:{" "}
         <Link href="/vs-splitwise" className="underline underline-offset-4">
-          why groups pick Tripzy
+          why groups pick {brand}
         </Link>
         .
       </p>

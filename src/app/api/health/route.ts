@@ -5,6 +5,7 @@ import {
   storageErrorMessage,
   storageMode,
 } from "@/lib/db"
+import { getAppDisplayName } from "@/lib/app-display-name"
 import { json } from "@/lib/http"
 import { connection } from "next/server"
 
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
         : Promise.resolve(null),
     ])
     return json({
+      app: getAppDisplayName(),
       mode,
       connected: postgres.connected,
       warning: storageErrorMessage(postgres),
@@ -43,6 +45,7 @@ export async function GET(request: Request) {
     })
   }
   return json({
+    app: getAppDisplayName(),
     mode,
     connected: mode === "local",
     warning: storageErrorMessage(),

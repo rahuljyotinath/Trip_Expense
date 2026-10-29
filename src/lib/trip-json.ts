@@ -14,7 +14,10 @@ export function exportTripJson(group: Group): string {
 export function parseTripJson(text: string): ParsedTripCsv & Pick<Group, "ledgerDayOrder"> {
   let data
   try { data = JSON.parse(text.replace(/^\uFEFF/, "")) } catch { throw new Error("Invalid JSON file.") }
-  const fail = () => { throw new Error("Invalid trip JSON data. Use a Tripzy JSON export.") }
+  const fail = () => {
+    const app = process.env.NEXT_PUBLIC_APP_DISPLAY_NAME?.trim() || "Tripzy"
+    throw new Error(`Invalid trip JSON data. Use a ${app} JSON export.`)
+  }
   if (!data || data.format !== TRIP_JSON_FORMAT || data.version !== TRIP_JSON_VERSION) {
     throw new Error("Unrecognized trip JSON format or version.")
   }

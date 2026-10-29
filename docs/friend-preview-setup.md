@@ -4,7 +4,7 @@ Use this when a second developer works on a branch (e.g. `features/security`) wi
 
 ## 1. Friend Supabase project
 
-1. [Supabase dashboard](https://supabase.com/dashboard) → **New project** (empty; not the production project).
+1. [Supabase dashboard](https://supabase.com/dashboard) → **New project** (empty; not production). Preview uses **Tripzy_Development** (`atiqkpxxqwmopwcwkkma`), not **Trip_Expense** prod.
 2. **Settings → Database → Connection string** → URI (pooler **Transaction** mode recommended for Vercel).
 3. From repo root:
 

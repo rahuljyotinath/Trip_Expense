@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { BrandMark } from "@/components/brand-mark"
+import { brandPageTitle, getAppDisplayName } from "@/lib/app-display-name"
+
+const brand = getAppDisplayName()
 
 export const metadata = {
-  title: "Privacy — Tripzy",
-  description: "How Tripzy handles your account and trip data.",
+  title: brandPageTitle("Privacy"),
+  description: `How ${brand} handles your account and trip data.`,
 }
 
 export default function PrivacyPage() {
@@ -18,7 +21,7 @@ export default function PrivacyPage() {
       <p className="mt-2 text-sm text-muted-foreground">Last updated: October 2026</p>
       <div className="prose prose-sm mt-8 max-w-none space-y-4 text-foreground dark:prose-invert">
         <p>
-          Tripzy (&quot;we&quot;) helps groups track shared trip expenses. This policy describes what
+          {brand} (&quot;we&quot;) helps groups track shared trip expenses. This policy describes what
           we collect and how we use it when you use our website or mobile apps.
         </p>
         <h2 className="font-heading text-xl">Information we collect</h2>
@@ -51,7 +54,7 @@ export default function PrivacyPage() {
         <h2 className="font-heading text-xl">Your choices</h2>
         <p>
           You can sign out at any time. Contact the trip admin to leave a trip roster. For account
-          deletion or export requests, contact the operator of your Tripzy deployment.
+          deletion or export requests, contact the operator of your {brand} deployment.
         </p>
         <h2 className="font-heading text-xl">Security</h2>
         <p>
@@ -59,7 +62,7 @@ export default function PrivacyPage() {
         </p>
         <p>
           <Link href="/" className="underline underline-offset-4">
-            Back to Tripzy
+            Back to {brand}
           </Link>
         </p>
       </div>

@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
+const appDisplayName =
+  process.env.NEXT_PUBLIC_APP_DISPLAY_NAME?.trim() ||
+  (process.env.VERCEL_ENV === "preview" ? "Tripzy_Development" : "Tripzy");
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_DISPLAY_NAME: appDisplayName,
+  },
   async headers() {
     const csp = ["default-src 'self'", "script-src 'self' 'unsafe-inline'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self' data:", `connect-src 'self'${process.env.NODE_ENV === "development" ? " ws: wss:" : ""}`, "worker-src 'self' blob:", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join("; ")
     return [{ source: "/:path*", headers: [

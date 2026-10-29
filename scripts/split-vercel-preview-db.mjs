@@ -119,18 +119,18 @@ async function main() {
     const existing = envs.find(
       (e) => e.key === key && (e.target ?? []).includes("preview")
     )
+    const envType = key === "POSTGRES_URL" ? "sensitive" : "encrypted"
     if (existing?.id) {
       await patchEnv(token, existing.id, {
         value,
         target: ["preview"],
-        type: key === "SESSION_SECRET" ? "encrypted" : "encrypted",
       })
       console.log(`${key}: preview updated`)
     } else {
       await createEnv(token, {
         key,
         value,
-        type: "encrypted",
+        type: envType,
         target: ["preview"],
       })
       console.log(`${key}: preview created`)

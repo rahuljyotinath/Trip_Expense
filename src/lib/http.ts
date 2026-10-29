@@ -31,7 +31,11 @@ export function assertWriteRequest(request: Request, hasBody = true) {
   const allowed = new Set([new URL(request.url).origin])
   if (process.env.NEXT_PUBLIC_APP_URL) { try { allowed.add(new URL(process.env.NEXT_PUBLIC_APP_URL).origin) } catch { /* invalid config is not trusted */ } }
   if ((origin && !allowed.has(origin)) || (!origin && ["cross-site", "same-site"].includes(request.headers.get("sec-fetch-site") ?? ""))) {
-    throw new ApiError("This request must come from Tripzy.", 403, "FORBIDDEN_ORIGIN")
+    throw new ApiError(
+      `This request must come from ${process.env.NEXT_PUBLIC_APP_DISPLAY_NAME?.trim() || "Tripzy"}.`,
+      403,
+      "FORBIDDEN_ORIGIN"
+    )
   }
 }
 
