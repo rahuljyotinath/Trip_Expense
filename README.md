@@ -47,6 +47,20 @@ POSTGRES_URL=... npm run db:import
 
 Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
 
+### Preview deploy (second developer / branch)
+
+Use one Vercel project with **scoped env vars** so production and preview use different databases:
+
+| Variable | Production (`main`) | Preview (e.g. `features/security`) |
+|----------|-------------------|-------------------------------------|
+| `POSTGRES_URL` | Your Supabase URI | Friend’s Supabase URI |
+| `SESSION_SECRET` | Your secret (≥32 chars) | Separate random secret |
+| `NEXT_PUBLIC_APP_URL` | Production site URL | Preview `*.vercel.app` URL |
+
+1. Friend: new Supabase project → `POSTGRES_URL=... npm run db:migrate-relational` (applies all `supabase/migrations/*.sql`).
+2. Vercel → **Environment Variables** → set the three vars above for **Preview** only (leave Production unchanged).
+3. Push the feature branch; open the Vercel **Preview** deployment URL. Confirm `/api/health` shows `mode: "postgres"`, `connected: true`.
+
 Database query changes, timing logs, and the read-only connection check are documented in [Database performance](docs/database-performance.md).
 
 ## How a trip works
