@@ -17,3 +17,7 @@ Issues and wayfinder maps live under `.scratch/` as markdown. See `docs/agents/i
 ### Domain docs
 
 Single-context layout at repo root. See `docs/agents/domain.md`.
+
+## GitHub
+
+`main` is protected by the **Protect main** ruleset: no direct pushes (including force-push). Open a branch, push it, and merge via pull request (0 required approvals for now).
