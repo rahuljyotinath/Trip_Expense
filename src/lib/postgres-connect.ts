@@ -15,12 +15,20 @@ export function postgresJsOptions(url: string): postgres.Options<Record<string, 
     sslmode === "verify-full" ||
     sslmode === "verify-ca" ||
     (isSupabasePostgresUrl(url) && !sslmode)
+  const supabase = isSupabasePostgresUrl(url)
   return {
     max: Number(process.env.POSTGRES_POOL_MAX || 4),
     prepare: false,
     connect_timeout: 10,
     idle_timeout: 60,
-    ...(needsSsl ? { ssl: { rejectUnauthorized: true } } : {}),
+    ...(needsSsl
+      ? {
+          ssl: {
+            // Supabase pooler certs often fail strict verify on Vercel/serverless.
+            rejectUnauthorized: supabase ? false : true,
+          },
+        }
+      : {}),
   }
 }
 
