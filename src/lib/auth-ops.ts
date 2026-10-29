@@ -3,45 +3,13 @@ import { validateUpiId } from "@/lib/upi"
 import { nowIso, uid } from "@/lib/ids"
 import type { Profile, Store } from "@/lib/types"
 
-const USERNAME_RE = /^[a-zA-Z0-9._-]{2,40}$/
-
-export function normalizeUsername(raw: string) {
-  return raw.trim().toLowerCase()
-}
-
-export function validateUsername(raw: string) {
-  const username = normalizeUsername(raw)
-  if (!USERNAME_RE.test(username)) {
-    throw new Error("Username: 2–40 characters, letters, numbers, . _ - only.")
-  }
-  return username
-}
-
-function validatePassword(raw: string) {
-  if (raw.length < 5) {
-    throw new Error("Password must be at least 5 characters.")
-  }
-  return raw
-}
-
-function cleanDisplayName(raw: string | undefined, fallback: string) {
-  const name = (raw ?? "").replace(/\s+/g, " ").trim()
-  if (!name) return fallback
-  if (name.length > 40) throw new Error("Display name: 1–40 characters.")
-  return name
-}
-
-export function findProfileByUsername(store: Store, rawUsername: string) {
-  const username = normalizeUsername(rawUsername)
-  return (
-    store.profiles.find((item) => normalizeUsername(item.username) === username) ??
-    null
-  )
-}
+import { validateUsername, validatePassword, cleanDisplayName, findProfileByUsername, normalizeUsername } from "./auth-validation"
+export { validateUsername, validatePassword, findProfileByUsername, normalizeUsername, profileNeedsSetup } from "./auth-validation"
 
 export function signUp(
   store: Store,
-  input: { username: string; password: string; name?: string }
+  input: { username: string; password: string; name?: string },
+  preparedHash?: string
 ) {
   const username = validateUsername(input.username)
   validatePassword(input.password)
@@ -52,7 +20,7 @@ export function signUp(
   const profile: Profile = {
     id: uid("p"),
     username,
-    passwordHash: hashPassword(input.password),
+    passwordHash: preparedHash ?? hashPassword(input.password),
     name,
     email: null,
     phone: null,
@@ -147,12 +115,6 @@ export function updateProfile(
   if (input.phone !== undefined && phone) {
     phone = validateContactPhone(phone)
   }
-  if (input.email !== undefined && !email) {
-    throw new Error("Email is required.")
-  }
-  if (input.phone !== undefined && !phone) {
-    throw new Error("Phone is required.")
-  }
   const upiId =
     input.upiId !== undefined
       ? validateUpiId(input.upiId)
@@ -161,14 +123,4 @@ export function updateProfile(
   const profiles = store.profiles.slice()
   profiles[index] = profile
   return { store: { ...store, profiles }, profile }
-}
-
-/** True until display name, email, and phone are complete. */
-export function profileNeedsSetup(
-  profile: Pick<Profile, "name" | "username" | "email" | "phone">
-) {
-  if (profile.name.trim() === profile.username.trim()) return true
-  if (!profile.email?.trim()) return true
-  if (!profile.phone?.trim()) return true
-  return false
 }

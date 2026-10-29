@@ -13,7 +13,7 @@ test("signUp and logIn", () => {
   let store = emptyStore()
   const created = signUp(store, {
     username: "Alex",
-    password: "password123",
+    password: "a unique test passphrase 123",
     name: "Alex M",
   })
   store = created.store
@@ -23,20 +23,20 @@ test("signUp and logIn", () => {
 
   const session = logIn(store, {
     username: "alex",
-    password: "password123",
+    password: "a unique test passphrase 123",
   })
   assert.equal(session.profile.id, created.profile.id)
 })
 
 test("signUp rejects duplicate username", () => {
-  const first = signUp(emptyStore(), { username: "sam", password: "password123" })
+  const first = signUp(emptyStore(), { username: "sam", password: "a unique test passphrase 123" })
   assert.throws(() =>
-    signUp(first.store, { username: "Sam", password: "otherpass99" })
+    signUp(first.store, { username: "Sam", password: "another unique passphrase 99" })
   )
 })
 
 test("updateProfile changes display and contact fields", () => {
-  const created = signUp(emptyStore(), { username: "lee", password: "password123" })
+  const created = signUp(emptyStore(), { username: "lee", password: "a unique test passphrase 123" })
   const updated = updateProfile(created.store, {
     profileId: created.profile.id,
     name: "Lee Park",
@@ -49,7 +49,7 @@ test("updateProfile changes display and contact fields", () => {
 })
 
 test("profileNeedsSetup when name matches username", () => {
-  const created = signUp(emptyStore(), { username: "sam", password: "password123" })
+  const created = signUp(emptyStore(), { username: "sam", password: "a unique test passphrase 123" })
   assert.equal(profileNeedsSetup(created.profile), true)
 })
 
@@ -65,7 +65,7 @@ test("profileNeedsSetup false when display name differs only by case", () => {
   )
 })
 
-test("profileNeedsSetup when email or phone missing", () => {
+test("profileNeedsSetup allows omitted contact details", () => {
   assert.equal(
     profileNeedsSetup({
       username: "sam",
@@ -73,32 +73,32 @@ test("profileNeedsSetup when email or phone missing", () => {
       email: null,
       phone: "+919876543210",
     }),
-    true
+    false
   )
 })
 
 test("logIn rejects wrong password", () => {
-  const created = signUp(emptyStore(), { username: "jane", password: "password123" })
+  const created = signUp(emptyStore(), { username: "jane", password: "a unique test passphrase 123" })
   assert.throws(() =>
     logIn(created.store, { username: "jane", password: "wrongpass" })
   )
 })
 
 test("logInWithProfile matches logIn for loaded row", () => {
-  const created = signUp(emptyStore(), { username: "jane", password: "password123" })
+  const created = signUp(emptyStore(), { username: "jane", password: "a unique test passphrase 123" })
   const session = logInWithProfile(created.profile, {
     username: "jane",
-    password: "password123",
+    password: "a unique test passphrase 123",
   })
   assert.equal(session.profile.id, created.profile.id)
 })
 
 test("logIn works with profiles-only store shape", () => {
-  const created = signUp(emptyStore(), { username: "pat", password: "password123" })
+  const created = signUp(emptyStore(), { username: "pat", password: "a unique test passphrase 123" })
   const profilesOnly = { profiles: created.store.profiles, groups: [] }
   const session = logIn(profilesOnly, {
     username: "pat",
-    password: "password123",
+    password: "a unique test passphrase 123",
   })
   assert.equal(session.profile.id, created.profile.id)
 })

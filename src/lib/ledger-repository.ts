@@ -1,7 +1,6 @@
 import postgres from "postgres"
 import { storesEqual } from "./store-compare"
 import {
-  emptyStore,
   normalizeGroup,
   normalizeProfile,
   normalizeStore,
@@ -19,8 +18,8 @@ export type Sql = ReturnType<typeof postgres>
 
 export type MutationScope =
   | { kind: "full" }
-  | { kind: "createTrip" }
-  | { kind: "trip"; tripId: string }
+  | { kind: "createTrip"; profileIds?: string[] }
+  | { kind: "trip"; tripId: string; profileIds?: string[] }
 
 export type RelationalLoadState = {
   store: Store
@@ -197,10 +196,12 @@ async function loadTripHeader(sql: Sql, tripId: string) {
 
 export async function loadGroupRelational(
   sql: Sql,
-  tripId: string
+  tripId: string,
+  versions?: Map<string, number>
 ): Promise<Group | null> {
   const header = await loadTripHeader(sql, tripId)
   if (!header) return null
+  versions?.set(tripId, Number(header.version))
   const [members, expenses, payments, adminProfileIds] = await Promise.all([
     loadMembers(sql, tripId),
     loadExpenses(sql, tripId),
@@ -374,6 +375,7 @@ export function profileIdsForTripMutation(
   }
   for (const inv of tripInvites) {
     if (inv.groupId !== tripId) continue
+    if (inv.invitedProfileId) ids.add(inv.invitedProfileId)
     if (inv.createdByProfileId) ids.add(inv.createdByProfileId)
     if (inv.respondedByProfileId) ids.add(inv.respondedByProfileId)
   }
@@ -460,6 +462,7 @@ function mapTripInviteRow(r: {
   group_id: string
   invited_email: string | null
   invited_phone: string | null
+  invited_profile_id?: string | null
   status: string
   created_by_profile_id: string
   created_at: string
@@ -471,6 +474,7 @@ function mapTripInviteRow(r: {
     groupId: r.group_id,
     invitedEmail: r.invited_email,
     invitedPhone: r.invited_phone,
+    invitedProfileId: r.invited_profile_id ?? null,
     status: r.status as TripInvite["status"],
     createdByProfileId: r.created_by_profile_id,
     createdAt: r.created_at,
@@ -535,38 +539,37 @@ export async function loadContacts(sql: Sql): Promise<Contact[]> {
   }))
 }
 
-async function loadTripCodeStubs(sql: Sql): Promise<Group[]> {
-  const rows = await sql<{ id: string; code: string }[]>`
-    SELECT id, code FROM trips ORDER BY id
+async function loadTripCodeStubs(sql: Sql, versions: Map<string, number>): Promise<Group[]> {
+  const rows = await sql<{ id: string; code: string; version: string }[]>`
+    SELECT id, code, version FROM trips ORDER BY id
   `
-  return rows.map((r) => stubGroupForCode(r.id, r.code))
+  return rows.map((r) => {
+    versions.set(r.id, Number(r.version))
+    return stubGroupForCode(r.id, r.code)
+  })
 }
 
-async function loadAllGroups(sql: Sql): Promise<Group[]> {
+async function loadAllGroups(sql: Sql, versions: Map<string, number>): Promise<Group[]> {
   const rows = await sql<{ id: string }[]>`SELECT id FROM trips ORDER BY id`
   const groups: Group[] = []
   for (const row of rows) {
-    const group = await loadGroupRelational(sql, row.id)
+    const group = await loadGroupRelational(sql, row.id, versions)
     if (group) groups.push(group)
   }
   return groups
 }
 
 export async function loadFullStoreRelational(sql: Sql): Promise<RelationalLoadState> {
-  const [profiles, groups, joinRequests, tripInvites, contacts, metaVersion] =
+  const tripVersions = new Map<string, number>()
+  const metaVersion = await loadMetaVersion(sql)
+  const [profiles, groups, joinRequests, tripInvites, contacts] =
     await Promise.all([
       loadAllProfiles(sql),
-      loadAllGroups(sql),
+      loadAllGroups(sql, tripVersions),
       loadJoinRequests(sql),
       loadTripInvites(sql),
       loadContacts(sql),
-      loadMetaVersion(sql),
     ])
-  const tripVersions = new Map<string, number>()
-  for (const g of groups) {
-    const header = await loadTripHeader(sql, g.id)
-    if (header) tripVersions.set(g.id, Number(header.version))
-  }
   return {
     store: normalizeStore({
       profiles,
@@ -586,22 +589,22 @@ export async function loadStoreForMutationRelational(
   sessionProfileId: string | null = null
 ): Promise<RelationalLoadState> {
   const sessionId = sessionProfileId?.trim() || null
-  const [joinRequests, tripInvites, contacts, metaVersion] = await Promise.all([
-    loadJoinRequests(sql),
-    loadTripInvites(sql),
-    loadContacts(sql),
-    loadMetaVersion(sql),
+  const metaVersion = await loadMetaVersion(sql)
+  const tripVersions = new Map<string, number>()
+  const contextGroup = scope.kind === "trip" ? await loadGroupRelational(sql, scope.tripId, tripVersions) : null
+  const owners = [...new Set([sessionId, ...(contextGroup?.members.map((m) => m.profileId) ?? [])].filter((id): id is string => Boolean(id)))]
+  const [joinRequests, tripInvites, contacts] = await Promise.all([
+    scope.kind === "full" ? loadJoinRequests(sql) : scope.kind === "trip" ? loadJoinRequestsForTrip(sql, scope.tripId) : Promise.resolve([]),
+    scope.kind === "full" ? loadTripInvites(sql) : scope.kind === "trip" ? loadTripInvitesForTrip(sql, scope.tripId) : Promise.resolve([]),
+    scope.kind === "full" ? loadContacts(sql) : Promise.all(owners.map((id) => loadContactsForOwnerRelational(sql, id))).then((lists) => lists.flat()),
   ])
   const meta = { joinRequests, tripInvites, contacts }
-  const tripVersions = new Map<string, number>()
 
   if (scope.kind === "full") {
-    const profiles = await loadAllProfiles(sql)
-    const groups = await loadAllGroups(sql)
-    for (const g of groups) {
-      const header = await loadTripHeader(sql, g.id)
-      if (header) tripVersions.set(g.id, Number(header.version))
-    }
+    const [profiles, groups] = await Promise.all([
+      loadAllProfiles(sql),
+      loadAllGroups(sql, tripVersions),
+    ])
     return {
       store: normalizeStore({ profiles, groups, ...meta }),
       tripVersions,
@@ -610,16 +613,8 @@ export async function loadStoreForMutationRelational(
   }
 
   if (scope.kind === "createTrip") {
-    const groups = await loadTripCodeStubs(sql)
-    await Promise.all(
-      groups.map(async (g) => {
-        const header = await loadTripHeader(sql, g.id)
-        if (header) tripVersions.set(g.id, Number(header.version))
-      })
-    )
-    const profiles = sessionId
-      ? await loadProfilesByIdsRelational(sql, [sessionId])
-      : []
+    const groups: Group[] = []
+    const profiles = await loadProfilesByIdsRelational(sql, [...(sessionId ? [sessionId] : []), ...(scope.profileIds ?? [])])
     return {
       store: normalizeStore({ profiles, groups, ...meta }),
       tripVersions,
@@ -627,12 +622,8 @@ export async function loadStoreForMutationRelational(
     }
   }
 
-  const group = await loadGroupRelational(sql, scope.tripId)
+  const group = contextGroup
   const groups = group ? [group] : []
-  if (group) {
-    const header = await loadTripHeader(sql, scope.tripId)
-    if (header) tripVersions.set(scope.tripId, Number(header.version))
-  }
   const profileIds = profileIdsForTripMutation(
     group,
     scope.tripId,
@@ -640,7 +631,7 @@ export async function loadStoreForMutationRelational(
     tripInvites,
     sessionId
   )
-  const profiles = await loadProfilesByIdsRelational(sql, profileIds)
+  const profiles = await loadProfilesByIdsRelational(sql, [...profileIds, ...(scope.profileIds ?? [])])
   return {
     store: normalizeStore({ profiles, groups, ...meta }),
     tripVersions,
@@ -648,14 +639,30 @@ export async function loadStoreForMutationRelational(
   }
 }
 
-async function persistTripChildren(sql: Sql, tripId: string, group: Group) {
-  await sql`DELETE FROM payments WHERE trip_id = ${tripId}`
-  await sql`DELETE FROM expenses WHERE trip_id = ${tripId}`
-  await sql`DELETE FROM members WHERE trip_id = ${tripId}`
+function changedRows<T extends { id: string }>(before: T[], after: T[]): T[] {
+  const previous = new Map(before.map((row) => [row.id, row]))
+  return after.filter((row) => JSON.stringify(previous.get(row.id)) !== JSON.stringify(row))
+}
+
+async function deleteRemovedRows<T extends { id: string }>(
+  sql: Sql,
+  table: string,
+  before: T[],
+  after: T[]
+) {
+  const retained = new Set(after.map((row) => row.id))
+  const removed = before.filter((row) => !retained.has(row.id)).map((row) => row.id)
+  if (removed.length) await sql`DELETE FROM ${sql(table)} WHERE id IN ${sql(removed)}`
+}
+
+async function persistTripChildrenDiff(sql: Sql, tripId: string, before: Group | undefined, group: Group) {
+  const old = before ? normalizeGroup(before) : null
+  await deleteRemovedRows(sql, "payments", old?.payments ?? [], group.payments)
+  await deleteRemovedRows(sql, "expenses", old?.expenses ?? [], group.expenses)
 
   const g = normalizeGroup(group)
-  for (const member of g.members) {
-    await sql`
+  for (const member of changedRows(old?.members ?? [], g.members)) {
+    const written = await sql`
       INSERT INTO members (id, trip_id, name, profile_id, covered_by_member_id)
       VALUES (
         ${member.id},
@@ -664,9 +671,16 @@ async function persistTripChildren(sql: Sql, tripId: string, group: Group) {
         ${member.profileId},
         ${null}
       )
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        profile_id = EXCLUDED.profile_id,
+        covered_by_member_id = EXCLUDED.covered_by_member_id
+      WHERE members.trip_id = EXCLUDED.trip_id
+      RETURNING id
     `
+    if (written.length === 0) throw new Error("Record ID belongs to another trip.")
   }
-  for (const member of g.members) {
+  for (const member of changedRows(old?.members ?? [], g.members)) {
     if (member.coveredByMemberId) {
       await sql`
         UPDATE members
@@ -676,8 +690,8 @@ async function persistTripChildren(sql: Sql, tripId: string, group: Group) {
     }
   }
 
-  for (const expense of g.expenses) {
-    await sql`
+  for (const expense of changedRows(old?.expenses ?? [], g.expenses)) {
+    const written = await sql`
       INSERT INTO expenses (
         id, trip_id, date, amount, reason, paid_by_member_id,
         participant_ids, split, shares, created_by_profile_id,
@@ -697,11 +711,26 @@ async function persistTripChildren(sql: Sql, tripId: string, group: Group) {
         ${expense.voidedAt},
         ${expense.voidedByProfileId}
       )
+      ON CONFLICT (id) DO UPDATE SET
+        date = EXCLUDED.date,
+        amount = EXCLUDED.amount,
+        reason = EXCLUDED.reason,
+        paid_by_member_id = EXCLUDED.paid_by_member_id,
+        participant_ids = EXCLUDED.participant_ids,
+        split = EXCLUDED.split,
+        shares = EXCLUDED.shares,
+        created_by_profile_id = EXCLUDED.created_by_profile_id,
+        created_at = EXCLUDED.created_at,
+        voided_at = EXCLUDED.voided_at,
+        voided_by_profile_id = EXCLUDED.voided_by_profile_id
+      WHERE expenses.trip_id = EXCLUDED.trip_id
+      RETURNING id
     `
+    if (written.length === 0) throw new Error("Record ID belongs to another trip.")
   }
 
-  for (const payment of g.payments) {
-    await sql`
+  for (const payment of changedRows(old?.payments ?? [], g.payments)) {
+    const written = await sql`
       INSERT INTO payments (
         id, trip_id, date, amount, from_member_id, to_member_id,
         created_by_profile_id, created_at, voided_at, voided_by_profile_id
@@ -717,11 +746,29 @@ async function persistTripChildren(sql: Sql, tripId: string, group: Group) {
         ${payment.voidedAt},
         ${payment.voidedByProfileId}
       )
+      ON CONFLICT (id) DO UPDATE SET
+        date = EXCLUDED.date,
+        amount = EXCLUDED.amount,
+        from_member_id = EXCLUDED.from_member_id,
+        to_member_id = EXCLUDED.to_member_id,
+        created_by_profile_id = EXCLUDED.created_by_profile_id,
+        created_at = EXCLUDED.created_at,
+        voided_at = EXCLUDED.voided_at,
+        voided_by_profile_id = EXCLUDED.voided_by_profile_id
+      WHERE payments.trip_id = EXCLUDED.trip_id
+      RETURNING id
     `
+    if (written.length === 0) throw new Error("Record ID belongs to another trip.")
   }
 
-  await sql`DELETE FROM trip_admin_profiles WHERE trip_id = ${tripId}`
-  for (const adminId of g.adminProfileIds ?? []) {
+  await deleteRemovedRows(sql, "members", old?.members ?? [], g.members)
+  const oldAdmins = old?.adminProfileIds ?? []
+  const admins = g.adminProfileIds ?? []
+  const removedAdmins = oldAdmins.filter((id) => !admins.includes(id))
+  if (removedAdmins.length) {
+    await sql`DELETE FROM trip_admin_profiles WHERE trip_id = ${tripId} AND profile_id IN ${sql(removedAdmins)}`
+  }
+  for (const adminId of admins.filter((id) => !oldAdmins.includes(id))) {
     if (adminId && adminId !== g.createdByProfileId) {
       await sql`
         INSERT INTO trip_admin_profiles (trip_id, profile_id)
@@ -773,8 +820,20 @@ async function persistMeta(
 
   if (!metaChanged) return
 
-  await sql`DELETE FROM join_requests`
-  for (const jr of a.joinRequests ?? []) {
+  const updated = await sql<{ version: string }[]>`
+    UPDATE ledger_meta
+    SET version = version + 1
+    WHERE id = ${META_ID} AND version = ${expectedMetaVersion}
+    RETURNING version
+  `
+  if (updated.length === 0) {
+    const err = new Error("Postgres meta version conflict.") as Error & { code: string }
+    err.code = "PG_VERSION_CONFLICT"
+    throw err
+  }
+
+  await deleteRemovedRows(sql, "join_requests", b.joinRequests ?? [], a.joinRequests ?? [])
+  for (const jr of changedRows(b.joinRequests ?? [], a.joinRequests ?? [])) {
     await sql`
       INSERT INTO join_requests (
         id, group_id, profile_id, status, created_at, decided_at, decided_by_profile_id
@@ -787,31 +846,49 @@ async function persistMeta(
         ${jr.decidedAt},
         ${jr.decidedByProfileId}
       )
+    ON CONFLICT (id) DO UPDATE SET
+      group_id = EXCLUDED.group_id,
+      profile_id = EXCLUDED.profile_id,
+      status = EXCLUDED.status,
+      created_at = EXCLUDED.created_at,
+      decided_at = EXCLUDED.decided_at,
+      decided_by_profile_id = EXCLUDED.decided_by_profile_id
     `
   }
 
-  await sql`DELETE FROM trip_invites`
-  for (const inv of a.tripInvites ?? []) {
+  await deleteRemovedRows(sql, "trip_invites", b.tripInvites ?? [], a.tripInvites ?? [])
+  for (const inv of changedRows(b.tripInvites ?? [], a.tripInvites ?? [])) {
     await sql`
       INSERT INTO trip_invites (
-        id, group_id, invited_email, invited_phone, status,
+        id, group_id, invited_email, invited_phone, invited_profile_id, status,
         created_by_profile_id, created_at, responded_at, responded_by_profile_id
       ) VALUES (
         ${inv.id},
         ${inv.groupId},
         ${inv.invitedEmail},
         ${inv.invitedPhone},
+        ${inv.invitedProfileId ?? null},
         ${inv.status},
         ${inv.createdByProfileId},
         ${inv.createdAt},
         ${inv.respondedAt},
         ${inv.respondedByProfileId}
       )
+    ON CONFLICT (id) DO UPDATE SET
+      group_id = EXCLUDED.group_id,
+      invited_email = EXCLUDED.invited_email,
+      invited_phone = EXCLUDED.invited_phone,
+      invited_profile_id = EXCLUDED.invited_profile_id,
+      status = EXCLUDED.status,
+      created_by_profile_id = EXCLUDED.created_by_profile_id,
+      created_at = EXCLUDED.created_at,
+      responded_at = EXCLUDED.responded_at,
+      responded_by_profile_id = EXCLUDED.responded_by_profile_id
     `
   }
 
-  await sql`DELETE FROM contacts`
-  for (const c of a.contacts ?? []) {
+  await deleteRemovedRows(sql, "contacts", b.contacts ?? [], a.contacts ?? [])
+  for (const c of changedRows(b.contacts ?? [], a.contacts ?? [])) {
     await sql`
       INSERT INTO contacts (
         id, owner_profile_id, target_profile_id, source, created_at
@@ -822,19 +899,12 @@ async function persistMeta(
         ${c.source},
         ${c.createdAt}
       )
+    ON CONFLICT (id) DO UPDATE SET
+      owner_profile_id = EXCLUDED.owner_profile_id,
+      target_profile_id = EXCLUDED.target_profile_id,
+      source = EXCLUDED.source,
+      created_at = EXCLUDED.created_at
     `
-  }
-
-  const updated = await sql<{ version: string }[]>`
-    UPDATE ledger_meta
-    SET version = version + 1
-    WHERE id = ${META_ID} AND version = ${expectedMetaVersion}
-    RETURNING version
-  `
-  if (updated.length === 0) {
-    const err = new Error("Postgres meta version conflict.") as Error & { code: string }
-    err.code = "PG_VERSION_CONFLICT"
-    throw err
   }
 }
 
@@ -920,7 +990,7 @@ export async function persistStoreDiffRelational(
         if (updated.length === 0) throw versionConflict()
       }
 
-      await persistTripChildren(conn, g.id, g)
+      await persistTripChildrenDiff(conn, g.id, old, g)
     }
 
     await persistMeta(conn, prev, next, state.metaVersion)
@@ -931,13 +1001,51 @@ export async function loadGroupsForProfileRelational(
   sql: Sql,
   profileId: string
 ): Promise<Group[]> {
-  const rows = await sql<{ trip_id: string }[]>`
-    SELECT DISTINCT trip_id FROM members WHERE profile_id = ${profileId}
+  const rows = await sql<{ data: Group }[]>`
+    SELECT jsonb_build_object(
+      'id', t.id, 'name', t.name, 'code', t.code, 'currency', t.currency,
+      'startDate', t.start_date, 'endDate', t.end_date,
+      'createdByProfileId', t.created_by_profile_id, 'createdAt', t.created_at,
+      'joinApprovalRequired', t.join_approval_required, 'ledgerDayOrder', t.ledger_day_order,
+      'adminProfileIds', COALESCE((SELECT jsonb_agg(a.profile_id)
+        FROM trip_admin_profiles a WHERE a.trip_id = t.id), '[]'::jsonb),
+      'members', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', m.id,
+        'name', m.name,
+        'profileId', m.profile_id,
+        'coveredByMemberId', m.covered_by_member_id
+      ) ORDER BY m.id) FROM members m WHERE m.trip_id = t.id), '[]'::jsonb),
+      'expenses', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', e.id,
+        'date', e.date,
+        'amount', e.amount,
+        'reason', e.reason,
+        'paidByMemberId', e.paid_by_member_id,
+        'participantIds', e.participant_ids,
+        'split', e.split,
+        'shares', e.shares,
+        'createdByProfileId', e.created_by_profile_id,
+        'createdAt', e.created_at,
+        'voidedAt', e.voided_at,
+        'voidedByProfileId', e.voided_by_profile_id
+      ) ORDER BY e.created_at, e.id) FROM expenses e WHERE e.trip_id = t.id), '[]'::jsonb),
+      'payments', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'id', p.id,
+        'date', p.date,
+        'amount', p.amount,
+        'fromMemberId', p.from_member_id,
+        'toMemberId', p.to_member_id,
+        'createdByProfileId', p.created_by_profile_id,
+        'createdAt', p.created_at,
+        'voidedAt', p.voided_at,
+        'voidedByProfileId', p.voided_by_profile_id
+      ) ORDER BY p.created_at, p.id) FROM payments p WHERE p.trip_id = t.id), '[]'::jsonb)
+    ) AS data
+    FROM trips t
+    WHERE t.id IN (SELECT trip_id FROM members WHERE profile_id = ${profileId})
+    ORDER BY t.id
   `
-  const loaded = await Promise.all(
-    rows.map((row) => loadGroupRelational(sql, row.trip_id))
-  )
-  return loaded.filter((group): group is Group => group !== null)
+  return rows.map((row) => normalizeGroup(row.data))
 }
 
 export async function loadGroupByCodeRelational(
@@ -999,6 +1107,9 @@ export async function importStoreToRelational(sql: Sql, store: Store) {
   const normalized = normalizeStore(store)
   await sql.begin(async (tx) => {
     const conn = tx as unknown as Sql
+    await conn`LOCK TABLE profiles, trips IN EXCLUSIVE MODE`
+    const occupied = await conn<{ occupied: boolean }[]>`SELECT EXISTS(SELECT 1 FROM profiles) OR EXISTS(SELECT 1 FROM trips) AS occupied`
+    if (occupied[0]?.occupied) throw new Error("Cannot backfill a populated relational ledger. Restore into a new database instead.")
     await conn`DELETE FROM payments`
     await conn`DELETE FROM expenses`
     await conn`DELETE FROM members`
@@ -1034,7 +1145,7 @@ export async function importStoreToRelational(sql: Sql, store: Store) {
           1
         )
       `
-      await persistTripChildren(conn, g.id, g)
+      await persistTripChildrenDiff(conn, g.id, undefined, g)
     }
 
     for (const jr of normalized.joinRequests ?? []) {
@@ -1056,13 +1167,14 @@ export async function importStoreToRelational(sql: Sql, store: Store) {
     for (const inv of normalized.tripInvites ?? []) {
       await conn`
         INSERT INTO trip_invites (
-          id, group_id, invited_email, invited_phone, status,
+          id, group_id, invited_email, invited_phone, invited_profile_id, status,
           created_by_profile_id, created_at, responded_at, responded_by_profile_id
         ) VALUES (
           ${inv.id},
           ${inv.groupId},
           ${inv.invitedEmail},
           ${inv.invitedPhone},
+        ${inv.invitedProfileId ?? null},
           ${inv.status},
           ${inv.createdByProfileId},
           ${inv.createdAt},

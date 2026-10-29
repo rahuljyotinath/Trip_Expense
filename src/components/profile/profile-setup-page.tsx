@@ -15,6 +15,7 @@ import {
   updateProfileUser,
 } from "@/lib/client-api"
 import { safeReturnPath } from "@/lib/navigation"
+import { AccountSecurity } from "./account-security"
 import type { PublicProfile } from "@/lib/types"
 
 export function ProfileSetupPage() {
@@ -59,8 +60,8 @@ export function ProfileSetupPage() {
 
   const canSubmit =
     name.trim().length > 0 &&
-    email.trim().includes("@") &&
-    phone.trim().replace(/\D/g, "").length >= 10
+    (!email.trim() || email.trim().includes("@")) &&
+    (!phone.trim() || phone.trim().replace(/\D/g, "").length >= 10)
 
   async function onSubmit() {
     if (!profile) return
@@ -129,7 +130,7 @@ export function ProfileSetupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-email">Email</Label>
+            <Label htmlFor="profile-email">Email (optional)</Label>
             <Input
               id="profile-email"
               type="email"
@@ -140,7 +141,7 @@ export function ProfileSetupPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="profile-phone">Phone</Label>
+            <Label htmlFor="profile-phone">Phone (optional)</Label>
             <Input
               id="profile-phone"
               type="tel"
@@ -168,6 +169,7 @@ export function ProfileSetupPage() {
           </Button>
         </CardContent>
       </Card>
+      <AccountSecurity />
     </AuthChrome>
   )
 }

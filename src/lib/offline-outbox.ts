@@ -7,12 +7,16 @@ export type OutboxOp = {
   groupId: string
   body: Record<string, unknown>
   createdAt: string
+  profileId?: string
+  failedError?: string
 }
 
 export type OutboxStorage = {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
   removeItem?(key: string): void
+  readonly length?: number
+  key?(index: number): string | null
 }
 
 export type DrainResult = {
@@ -50,6 +54,8 @@ function readOps(storage: OutboxStorage): OutboxOp[] {
 export function memoryStorage(): OutboxStorage {
   const data = new Map<string, string>()
   return {
+    get length() { return data.size },
+    key: (index) => [...data.keys()][index] ?? null,
     getItem: (key) => data.get(key) ?? null,
     setItem: (key, value) => {
       data.set(key, value)
@@ -85,25 +91,40 @@ export function isNetworkError(error: unknown) {
 
 export function isRetryableSyncError(error: unknown) {
   if (isNetworkError(error)) return true
+  const status = (error as { status?: number })?.status
+  if (status === 401 || status === 408 || status === 409 || status === 429 || (status && status >= 500)) return true
   const message = error instanceof Error ? error.message : String(error)
-  if (/unconfigured/i.test(message)) return true
-  if (/sign in again|profile not found|forbidden|version conflict|not on the ledger/i.test(message)) {
-    return false
-  }
-  return false
+  return /unconfigured|sign in again|version conflict|temporarily unavailable|not on the ledger/i.test(message)
 }
 
-export function createOutbox(storage: OutboxStorage) {
+export function createOutbox(storage: OutboxStorage, namespace = OUTBOX_KEY) {
   const listeners = new Set<() => void>()
 
-  function write(ops: OutboxOp[]) {
-    storage.setItem(OUTBOX_KEY, JSON.stringify(ops))
-    for (const listener of listeners) listener()
+  const prefix = `${namespace}.op.`
+  function notify() { for (const listener of listeners) listener() }
+  function all(): OutboxOp[] {
+    // A key per operation prevents one tab or an in-flight drain from replacing
+    // another operation. The old aggregate is retained until safely migrated.
+    const ops = readOps({ getItem: () => storage.getItem(namespace), setItem: storage.setItem })
+    for (let i = 0; i < (storage.length ?? 0); i++) {
+      const key = storage.key?.(i)
+      if (!key?.startsWith(prefix)) continue
+      try { const op = JSON.parse(storage.getItem(key) ?? "null") as OutboxOp; if (op?.opId && op.groupId) ops.push(op) } catch { /* leave corrupt records recoverable */ }
+    }
+    return [...new Map(ops.map((op) => [op.opId, op])).values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
-
-  function list() {
-    return readOps(storage)
+  function put(op: OutboxOp) {
+    if (!storage.key) throw new Error("Offline storage does not support durable operations.")
+    storage.setItem(prefix + op.opId, JSON.stringify(op))
+    notify()
   }
+  function remove(opId: string) {
+    storage.removeItem?.(prefix + opId)
+    const legacy = readOps({ getItem: () => storage.getItem(namespace), setItem: storage.setItem })
+    if (legacy.some((op) => op.opId === opId)) storage.setItem(namespace, JSON.stringify(legacy.filter((op) => op.opId !== opId)))
+    notify()
+  }
+  function list() { return all().filter((op) => !op.failedError) }
 
   return {
     list,
@@ -115,13 +136,14 @@ export function createOutbox(storage: OutboxStorage) {
     enqueue(op: OutboxOp) {
       const ops = list()
       if (ops.some((item) => item.opId === op.opId)) return ops
-      const next = [...ops, op]
-      write(next)
-      return next
+      put(op)
+      return list()
     },
     clear() {
-      write([])
+      for (const op of all()) remove(op.opId)
     },
+    failed() { return all().filter((op) => Boolean(op.failedError)) },
+    retryFailed() { for (const op of all()) if (op.failedError) put({ ...op, failedError: undefined }) },
     subscribe(listener: () => void) {
       listeners.add(listener)
       return () => {
@@ -140,15 +162,17 @@ export function createOutbox(storage: OutboxStorage) {
         const head = ops[0]
         if (!head) return { sent, remaining: 0, paused: false, dropped, droppedError }
         try {
+          if (!hooks.isOnline()) return { sent, remaining: list().length, paused: true, dropped, droppedError }
           const result = await hooks.send(head)
-          write(ops.slice(1))
+          remove(head.opId)
           sent += 1
           hooks.onSent?.(head, result)
         } catch (error) {
           if (hooks.isRetryable?.(error) ?? isRetryableSyncError(error)) {
             return { sent, remaining: list().length, paused: true, dropped, error, droppedError }
           }
-          write(ops.slice(1))
+          remove(head.opId)
+          put({ ...head, failedError: error instanceof Error ? error.message : "Could not save this edit." })
           dropped += 1
           droppedError = error
         }
@@ -159,13 +183,24 @@ export function createOutbox(storage: OutboxStorage) {
 
 export type Outbox = ReturnType<typeof createOutbox>
 
-let singleton: Outbox | null = null
+const singletons = new Map<string, Outbox>()
 
-export function browserOutbox(): Outbox {
-  if (!singleton) {
-    const storage =
-      typeof window !== "undefined" ? window.localStorage : memoryStorage()
-    singleton = createOutbox(storage)
+export function browserOutbox(profileId?: string): Outbox {
+  const storage = typeof window !== "undefined" ? window.localStorage : memoryStorage()
+  let owner = profileId
+  if (!owner) {
+    try { owner = JSON.parse(storage.getItem("waybill.profile") ?? "null")?.id } catch { /* no session */ }
   }
-  return singleton
+  const namespace = `${OUTBOX_KEY}:${owner || "signed-out"}`
+  let box = singletons.get(namespace)
+  if (!box) {
+    box = createOutbox(storage, namespace); singletons.set(namespace, box)
+    if (owner) {
+      const legacy = readOps(storage)
+      const owned = legacy.filter((op) => (op.profileId ?? op.body.profileId) === owner)
+      for (const op of owned) box.enqueue({ ...op, profileId: owner })
+      if (owned.length) storage.setItem(OUTBOX_KEY, JSON.stringify(legacy.filter((op) => !owned.some((old) => old.opId === op.opId))))
+    }
+  }
+  return box
 }

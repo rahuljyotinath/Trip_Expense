@@ -1,0 +1,6 @@
+# Supabase branching (Preview DB per Git branch when GitHub integration is enabled).
+# Dashboard: Project Settings → Integrations → GitHub → enable Automatic branching.
+project_id = "chexgewhgjvaqoqvkqsm"
+
+[db.migrations]
+enabled = true

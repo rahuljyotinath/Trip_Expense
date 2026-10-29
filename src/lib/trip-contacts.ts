@@ -1,4 +1,4 @@
-import { findProfileByUsername, normalizeUsername } from "@/lib/auth-ops"
+import { findProfileByUsername, normalizeUsername } from "@/lib/auth-validation"
 import { normalizeInviteEmail, normalizeInvitePhone } from "@/lib/trip-invites"
 import type { Contact, ContactSource, Profile, PublicProfile, Store } from "@/lib/types"
 import { publicProfile } from "@/lib/types"

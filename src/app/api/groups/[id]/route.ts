@@ -1,5 +1,6 @@
+import { withRequestPerformance } from "@/lib/request-performance"
 import { profileFromId } from "@/lib/auth-ops"
-import { probePostgres, storageMode, updateStore } from "@/lib/db"
+import { readProfileForContactSearch, probePostgres, storageMode, updateStore } from "@/lib/db"
 import { loadTripGetPayload } from "@/lib/trip-get-context"
 import { connection } from "next/server"
 import { fail, json, readBody } from "@/lib/http"
@@ -10,7 +11,6 @@ import {
   addPayment,
   approveJoinRequest,
   claimMemberWithJoinApproval,
-  declineTripInvite,
   deleteExpense,
   updateExpense,
   updateGroup,
@@ -26,11 +26,13 @@ import {
   voidPayment,
 } from "@/lib/operations"
 import type { SplitMode } from "@/lib/types"
+import { canViewGroup, tripJoinPreview } from "@/lib/trip-access"
+import { joinRequestForProfile } from "@/lib/trip-invites"
 
-export async function GET(
+export const GET = withRequestPerformance("trip.read", async (
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
@@ -59,12 +61,12 @@ export async function GET(
   } catch (error) {
     return fail(error)
   }
-}
+})
 
-export async function PATCH(
+export const PATCH = withRequestPerformance("trip.save", async (
   request: Request,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
@@ -107,6 +109,8 @@ export async function PATCH(
       isAdmin?: boolean
     }>(request)
 
+    const inviteTarget = body.action === "send-trip-invite" && body.email?.trim().startsWith("@")
+      ? await readProfileForContactSearch(body.email) : null
     const result = await updateStore(
       (store) => {
       const requireSessionProfile = () => {
@@ -123,6 +127,7 @@ export async function PATCH(
           groupId: id,
           memberId: body.memberId ?? "",
           profileId: sessionId,
+          code: body.code,
         })
       }
       if (body.action === "request-join") {
@@ -258,12 +263,13 @@ export async function PATCH(
           restore: body.restore,
         })
       }
-      if (body.action === "import-trip-csv") {
+      if (body.action === "import-trip-csv" || body.action === "import-trip-json") {
         requireSessionProfile()
         return importTripCsv(store, {
           groupId: id,
           profileId: sessionId,
           csv: body.csv ?? "",
+          format: body.action === "import-trip-json" ? "json" : undefined,
         })
       }
       if (body.action === "cover-member") {
@@ -290,10 +296,17 @@ export async function PATCH(
       }
       throw new Error("Unknown action.")
     },
-      { scope: { kind: "trip", tripId: id } }
+      { scope: { kind: "trip", tripId: id, profileIds: [body.targetProfileId, inviteTarget?.id].filter((id): id is string => Boolean(id)) } }
     )
+    if (body.action === "request-join") {
+      return json({ group: tripJoinPreview(result.group, sessionId, result.store.joinRequests),
+        joinRequest: joinRequestForProfile(result.store, id, sessionId) })
+    }
+    if (!canViewGroup(sessionId, result.group, { joinCode: body.code, joinRequests: result.store.joinRequests })) {
+      return json({ error: "You don't have access to this trip.", code: "FORBIDDEN" }, 403)
+    }
     return json({ group: result.group })
   } catch (error) {
     return fail(error)
   }
-}
+})

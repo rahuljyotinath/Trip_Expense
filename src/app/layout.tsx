@@ -1,7 +1,11 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google"
 import { PwaRegister } from "@/components/pwa-register"
+import { getAppDisplayName, isDevelopmentBrand } from "@/lib/app-display-name"
 import "./globals.css"
+
+const appTitle = getAppDisplayName()
+const appIcon = isDevelopmentBrand() ? "/icon-dev.svg" : "/icon.svg"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,18 +24,17 @@ const instrument = Instrument_Serif({
 })
 
 export const metadata: Metadata = {
-  title: "Tripzy",
+  title: appTitle,
   description:
     "Split trip spends and settle with your group — private trip khata.",
-  manifest: "/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    icon: [{ url: appIcon, type: "image/svg+xml" }],
     apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Tripzy",
+    title: appTitle,
   },
   formatDetection: {
     telephone: false,

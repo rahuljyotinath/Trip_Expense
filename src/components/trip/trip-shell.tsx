@@ -23,6 +23,9 @@ export function Shell({
   onLogout?: () => void
   compact?: boolean
 }) {
+  const brand = process.env.NEXT_PUBLIC_APP_DISPLAY_NAME?.trim() || "Tripzy"
+  const development = brand !== "Tripzy"
+
   return (
     <div
       className={
@@ -100,6 +103,15 @@ export function Shell({
           )}
         </div>
       </header>
+      {development ? (
+        <Alert className={compact ? "mb-2 border-amber-500/40 bg-amber-500/10 py-2" : "mb-4 border-amber-500/40 bg-amber-500/10"}>
+          <AlertCircle className="text-amber-700 dark:text-amber-400" />
+          <AlertTitle>{brand}</AlertTitle>
+          <AlertDescription>
+            Development preview — separate database, not production Tripzy.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {health?.warning ? (
         <Alert className={compact ? "mb-2 py-2" : "mb-4"}>
           <AlertCircle />

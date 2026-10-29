@@ -1,37 +1,12 @@
 import Link from "next/link"
+import { AppLogo } from "@/components/app-logo"
+import { brandHomeAriaLabel, getAppDisplayName, isDevelopmentBrand } from "@/lib/app-display-name"
 import { cn } from "@/lib/utils"
 
 const sizes = {
   sm: { icon: "size-7", text: "text-base", gap: "gap-1.5" },
   md: { icon: "size-9", text: "text-xl sm:text-2xl", gap: "gap-2" },
 } as const
-
-function TripzyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 32 32"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={cn("shrink-0 text-primary-foreground", className)}
-      aria-hidden
-    >
-      <rect width="32" height="32" rx="8" className="fill-primary" />
-      <path
-        d="M10 11h12M16 11v11"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M16 18c3 0 5.5 1.2 7 3.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <circle cx="23" cy="22.5" r="2.25" className="fill-moss" />
-    </svg>
-  )
-}
 
 export function BrandMark({
   size = "md",
@@ -47,11 +22,20 @@ export function BrandMark({
   className?: string
 }) {
   const s = sizes[size]
+  const wordmark = getAppDisplayName()
+  const dev = isDevelopmentBrand()
   const inner = (
     <>
-      <TripzyIcon className={s.icon} />
+      <AppLogo className={s.icon} />
       {showWordmark ? (
-        <span className={cn("font-heading tracking-tight", s.text)}>Tripzy</span>
+        <span
+          className={cn(
+            "font-heading tracking-tight",
+            dev ? "text-sm sm:text-base" : s.text
+          )}
+        >
+          {wordmark}
+        </span>
       ) : null}
     </>
   )
@@ -64,7 +48,7 @@ export function BrandMark({
 
   if (href) {
     return (
-      <Link href={href} className={rowClass} aria-label="Tripzy home">
+      <Link href={href} className={rowClass} aria-label={brandHomeAriaLabel()}>
         {inner}
       </Link>
     )

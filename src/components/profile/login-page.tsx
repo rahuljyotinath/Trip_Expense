@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { profileNeedsSetup } from "@/lib/auth-ops"
+import { profileNeedsSetup } from "@/lib/auth-validation"
 import { loadHealth, logInUser, type Health } from "@/lib/client-api"
 import { safeReturnPath } from "@/lib/navigation"
 
@@ -105,6 +105,7 @@ export function LoginPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+      <p className="mb-4 text-sm"><Link href="/recover" className="underline">Forgot password? Use your recovery code</Link></p>
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle className="font-heading text-3xl">Sign in</CardTitle>

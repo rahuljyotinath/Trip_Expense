@@ -44,3 +44,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local server session, recovery and abuse-protection state
+/data/security.json*
+/test-results/
+/playwright-report/

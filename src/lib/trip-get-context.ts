@@ -1,6 +1,5 @@
 import {
   readGroupById,
-  readProfileForSession,
   readProfilesByIds,
   readStore,
   readTripLedgerMeta,
@@ -59,10 +58,9 @@ export async function loadTripGetPayload(
   sessionId: string,
   joinCode: string | null
 ): Promise<TripGetPayload | { error: "not_found" | "forbidden" }> {
-  const [group, meta, sessionProfile] = await Promise.all([
+  const [group, meta] = await Promise.all([
     resolveGroup(groupId),
     readTripLedgerMeta(groupId),
-    readProfileForSession(sessionId),
   ])
   if (!group) return { error: "not_found" }
 
@@ -73,16 +71,10 @@ export async function loadTripGetPayload(
 
   const profileIds = profileIdsForTripContext(group, joinRequests, sessionId)
   const profiles = await readProfilesByIds(profileIds)
-  const mergedProfiles = [...profiles]
-  if (
-    sessionProfile &&
-    !mergedProfiles.some((item) => item.id === sessionProfile.id)
-  ) {
-    mergedProfiles.push(sessionProfile)
-  }
+  const sessionProfile = profiles.find((item) => item.id === sessionId) ?? null
 
   const store: Store = {
-    profiles: mergedProfiles,
+    profiles,
     groups: [group],
     joinRequests,
     tripInvites: meta.tripInvites,

@@ -312,9 +312,7 @@ test("setMemberCover clears cover", () => {
 
 test("addExpense keeps client expenseId and is idempotent on retry", () => {
   const { store, profile } = baseStore()
-  let s = store
-  let group: Group
-  ;({ store: s, group } = seatedTrip(s, profile.id))
+  const { store: s, group } = seatedTrip(store, profile.id)
   const payer = group.members[0]!
   const friend = group.members[1]!
   const first = addExpense(s, {
@@ -343,9 +341,7 @@ test("addExpense keeps client expenseId and is idempotent on retry", () => {
 
 test("addPayment keeps client paymentId and is idempotent on retry", () => {
   const { store, profile } = baseStore()
-  let s = store
-  let group: Group
-  ;({ store: s, group } = seatedTrip(s, profile.id))
+  const { store: s, group } = seatedTrip(store, profile.id)
   const opener = group.members[0]!
   const friend = group.members[1]!
   const first = addPayment(s, {

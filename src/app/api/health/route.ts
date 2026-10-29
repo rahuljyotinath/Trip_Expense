@@ -5,6 +5,7 @@ import {
   storageErrorMessage,
   storageMode,
 } from "@/lib/db"
+import { getAppDisplayName } from "@/lib/app-display-name"
 import { json } from "@/lib/http"
 import { connection } from "next/server"
 
@@ -17,16 +18,19 @@ function sessionReady() {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await connection()
   const mode = storageMode()
   const ready = sessionReady()
   if (mode === "postgres") {
     const [postgres, stats] = await Promise.all([
       probePostgres(),
-      readLedgerHealthStats(),
+      new URL(request.url).searchParams.get("stats") === "1"
+        ? readLedgerHealthStats()
+        : Promise.resolve(null),
     ])
     return json({
+      app: getAppDisplayName(),
       mode,
       connected: postgres.connected,
       warning: storageErrorMessage(postgres),
@@ -41,6 +45,7 @@ export async function GET() {
     })
   }
   return json({
+    app: getAppDisplayName(),
     mode,
     connected: mode === "local",
     warning: storageErrorMessage(),

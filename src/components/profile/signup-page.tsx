@@ -20,17 +20,34 @@ export function SignupPage() {
   const next = searchParams.get("next")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = username.trim().length > 0 && password.length >= 5
+  const canSubmit = username.trim().length > 0 && password.length >= 15 && password.length <= 1024
   const joiningTrip = Boolean(next?.includes("/trip/") || join)
 
   async function onSubmit() {
     setBusy(true)
     setError(null)
     try {
-      await signUpUser({ username, password })
+      const result = await signUpUser({ username, password })
+      setRecoveryCode(result.recoveryCode)
+      setPassword("")
+      return
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign up failed.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (recoveryCode) return (
+    <AuthChrome title="Save your recovery code">
+      <Card><CardHeader><CardTitle>Keep this code somewhere safe</CardTitle><CardDescription>This is the only way to reset a forgotten password without operator assistance. It is shown once. Anyone with it can reset your password.</CardDescription></CardHeader>
+        <CardContent className="space-y-4"><code className="block break-all rounded border p-3 select-all">{recoveryCode}</code>
+          <Button onClick={() => {
       const target = next
         ? safeReturnPath(next)
         : join
@@ -40,12 +57,10 @@ export function SignupPage() {
         ? `?next=${encodeURIComponent(target)}&join=${encodeURIComponent(join)}`
         : `?next=${encodeURIComponent(target)}`
       router.replace(`/profile/setup${setupQuery}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign up failed.")
-    } finally {
-      setBusy(false)
-    }
-  }
+          }}>I saved my code — continue</Button>
+        </CardContent></Card>
+    </AuthChrome>
+  )
 
   const loginHref = next
     ? `/login?next=${encodeURIComponent(safeReturnPath(next))}`
@@ -67,8 +82,8 @@ export function SignupPage() {
           <CardTitle className="font-heading text-3xl">Create account</CardTitle>
           <CardDescription>
             {joiningTrip
-              ? "Create an account to join the trip. Next: your name, email, and phone (must match an invite if you got one)."
-              : "Account required before joining a trip. Next step: display name, email, and phone."}
+              ? "Create an account to join the trip. Next: your display name and optional contact details."
+              : "Account required before joining a trip. Next step: display name and optional contact details."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -98,7 +113,7 @@ export function SignupPage() {
                 if (event.key === "Enter" && canSubmit) void onSubmit()
               }}
             />
-            <p className="text-xs text-muted-foreground">At least 5 characters.</p>
+            <p className="text-xs text-muted-foreground">At least 15 characters.</p>
           </div>
           <Button disabled={busy || !canSubmit} onClick={() => void onSubmit()} size="lg">
             Continue <ArrowRight />

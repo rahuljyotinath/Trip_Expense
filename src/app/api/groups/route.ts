@@ -1,9 +1,10 @@
+import { withRequestPerformance } from "@/lib/request-performance"
 import { profileFromId } from "@/lib/auth-ops"
 import {
   readGroupByCode,
   readGroupsForProfile,
   readStoreForContacts,
-  readStoreLedgerMeta,
+  readTripLedgerMeta,
   storageMode,
   updateStore,
 } from "@/lib/db"
@@ -14,8 +15,9 @@ import { joinRequestForProfile } from "@/lib/trip-invites"
 import { createGroup, type RosterEntry } from "@/lib/operations"
 import { assertRosterProfileIdsAreFriends } from "@/lib/trip-contacts"
 import { emptyStore } from "@/lib/types"
+import { tripJoinPreview } from "@/lib/trip-access"
 
-export async function GET(request: Request) {
+export const GET = withRequestPerformance("groups.list", async (request: Request) => {
   if (storageMode() === "unconfigured") {
     return json({ error: "unconfigured" }, 503)
   }
@@ -31,10 +33,10 @@ export async function GET(request: Request) {
     if (code) {
       const group = await readGroupByCode(code)
       if (!group) return json({ error: "No trip uses that code." }, 404)
-      const meta = await readStoreLedgerMeta()
+      const meta = await readTripLedgerMeta(group.id)
       const store = { ...emptyStore(), groups: [group], joinRequests: meta.joinRequests }
       const joinRequest = joinRequestForProfile(store, group.id, sessionId)
-      return json({ group, joinRequest })
+      return json({ group: tripJoinPreview(group, sessionId, meta.joinRequests), joinRequest })
     }
     if (!profileId) return json({ error: "profileId or code required." }, 400)
     if (profileId !== sessionId) {
@@ -44,7 +46,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return fail(error)
   }
-}
+})
 
 export async function POST(request: Request) {
   if (storageMode() === "unconfigured") {
@@ -83,7 +85,7 @@ export async function POST(request: Request) {
         createdByProfileId: sessionId,
       })
     },
-      { scope: { kind: "createTrip" } }
+      { scope: { kind: "createTrip", profileIds: roster?.flatMap((row) => row.profileId ? [row.profileId] : []) } }
     )
     return json({ group: result.group })
   } catch (error) {

@@ -1,4 +1,4 @@
-import { signUp } from "@/lib/auth-ops"
+import { signUp, validatePassword } from "@/lib/auth-ops"
 import {
   isPostgresPasswordAuthError,
   resetPostgresClient,
@@ -7,9 +7,11 @@ import {
 } from "@/lib/db"
 import { POSTGRES_DEPLOY_AUTH_MESSAGE } from "@/lib/postgres-connect"
 import { fail, failServiceUnavailable, json, readBody } from "@/lib/http"
-import { createSessionToken } from "@/lib/auth-crypto"
+import { hashPasswordAsync } from "@/lib/auth-crypto"
 import { setSessionProfile } from "@/lib/session"
 import { publicProfile } from "@/lib/types"
+import { issueRecoveryCode } from "@/lib/security-store"
+import { limitAuth } from "@/lib/auth-rate-limit"
 import { connection } from "next/server"
 
 export async function POST(request: Request) {
@@ -23,19 +25,23 @@ export async function POST(request: Request) {
       password?: string
       name?: string
     }>(request)
+    await limitAuth(request, "signup", body.username)
+    validatePassword(body.password ?? "")
+    const passwordHash = await hashPasswordAsync(body.password ?? "")
     const result = await updateStore(
       (store) =>
         signUp(store, {
           username: body.username ?? "",
           password: body.password ?? "",
           name: body.name,
-        }),
+        }, passwordHash),
       { scope: { kind: "createTrip" } }
     )
-    await setSessionProfile(result.profile.id)
+    const recoveryCode = await issueRecoveryCode(result.profile.id)
+    const sessionToken = await setSessionProfile(result.profile.id)
     return json({
       profile: publicProfile(result.profile),
-      sessionToken: createSessionToken(result.profile.id),
+      sessionToken, recoveryCode,
     })
   } catch (error) {
     if (isPostgresPasswordAuthError(error)) {
