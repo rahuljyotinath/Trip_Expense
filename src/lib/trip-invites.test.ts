@@ -86,5 +86,5 @@ test("send and list pending invite", () => {
   const approved = s3.joinRequests?.find(
     (item) => item.groupId === group.id && item.profileId === friend.id
   )
-  assert.equal(approved?.status, "approved")
+  assert.equal(approved?.status, "pending")
 })

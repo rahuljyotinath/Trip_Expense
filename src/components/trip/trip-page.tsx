@@ -68,7 +68,7 @@ export function TripPage() {
     setBusy(true)
     setDeskError(null)
     try {
-      const next = await claimSeat(group.id, memberId, profile.id)
+      const next = await claimSeat(group.id, memberId, profile.id, group.code)
       setGroup(next)
     } catch (err) {
       setDeskError(errorText(err))
@@ -138,7 +138,7 @@ export function TripPage() {
                   void respondTripInvite("accept", emailInvite.id)
                     .then((next) => {
                       setDismissedInviteId(emailInvite.id)
-                      if (next) setGroup(next)
+                      if (next) router.push(`/?join=${encodeURIComponent(next.code)}`)
                       return refreshGroup()
                     })
                     .catch((err) => setDeskError(errorText(err)))

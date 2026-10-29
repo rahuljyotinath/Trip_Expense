@@ -109,12 +109,12 @@ test("withClientPatchIds mints expenseId paymentId and clientOpId once", () => {
 test("isNetworkError vs retryable auth errors", () => {
   assert.equal(isNetworkError(new Error("Request timed out. Check your connection.")), true)
   assert.equal(isNetworkError(new Error("Sign in again.")), false)
-  assert.equal(isRetryableSyncError(new Error("Sign in again.")), false)
+  assert.equal(isRetryableSyncError(new Error("Sign in again.")), true)
   assert.equal(
     isRetryableSyncError(
       new Error("Sign in again — your account is not on the ledger.")
     ),
-    false
+    true
   )
   assert.equal(isRetryableSyncError(new Error("Profile not found.")), false)
   assert.equal(isRetryableSyncError(new Error("unconfigured")), true)

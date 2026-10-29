@@ -65,11 +65,19 @@ export type TripInvite = {
   groupId: string
   invitedEmail: string | null
   invitedPhone: string | null
+  /** Only an explicit account selection is an identity proof. Contact fields are unverified. */
+  invitedProfileId?: string | null
   status: TripInviteStatus
   createdByProfileId: string
   createdAt: string
   respondedAt: string | null
   respondedByProfileId: string | null
+}
+
+/** Join-screen DTO. Never contains ledger entries or other people's profile ids. */
+export type TripJoinPreview = Pick<Group, "id" | "name" | "code" | "joinApprovalRequired"> & {
+  alreadySeated: boolean
+  members: Array<{ id: string; name: string; taken: boolean }>
 }
 
 export type JoinRequestStatus = "pending" | "approved" | "rejected"

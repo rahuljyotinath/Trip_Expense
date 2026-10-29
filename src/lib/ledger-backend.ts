@@ -1,3 +1,4 @@
+import { noteLedgerBackend } from "./request-performance"
 import type { Sql } from "./ledger-repository"
 import { storageMode } from "./storage-mode"
 
@@ -13,8 +14,14 @@ export function relationalLedgerForced(): boolean | null {
 
 export async function isRelationalLedger(sql: Sql): Promise<boolean> {
   const forced = relationalLedgerForced()
-  if (forced !== null) return forced
-  if (relationalCached !== null) return relationalCached
+  if (forced !== null) {
+    noteLedgerBackend(forced)
+    return forced
+  }
+  if (relationalCached !== null) {
+    noteLedgerBackend(relationalCached)
+    return relationalCached
+  }
   if (storageMode() !== "postgres") {
     relationalCached = false
     return false
@@ -24,6 +31,7 @@ export async function isRelationalLedger(sql: Sql): Promise<boolean> {
       SELECT to_regclass('public.trips') IS NOT NULL AS ready
     `
     relationalCached = Boolean(rows[0]?.ready)
+    noteLedgerBackend(relationalCached)
     return relationalCached
   } catch {
     relationalCached = false

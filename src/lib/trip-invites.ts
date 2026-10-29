@@ -11,9 +11,10 @@ export function normalizeInvitePhone(raw: string | null | undefined): string | n
 }
 
 export function profileMatchesInvite(
-  profile: Pick<Profile, "email" | "phone">,
+  profile: Pick<Profile, "email" | "phone"> & { id?: string },
   invite: TripInvite
 ): boolean {
+  if (invite.invitedProfileId) return profile.id === invite.invitedProfileId
   const email = normalizeInviteEmail(profile.email)
   const phone = normalizeInvitePhone(profile.phone)
   const inviteEmail = normalizeInviteEmail(invite.invitedEmail)
@@ -56,7 +57,8 @@ export function pendingInvitesForProfile(store: Store, profile: PublicProfile): 
   const full = store.profiles.find((item) => item.id === profile.id)
   if (!full) return []
   return storeTripInvites(store).filter(
-    (invite) => invite.status === "pending" && profileMatchesInvite(full, invite)
+    (invite) => invite.status === "pending" && profileMatchesInvite(full, invite) &&
+      (Boolean(invite.invitedProfileId) || !joinRequestForProfile(store, invite.groupId, profile.id))
   )
 }
 

@@ -1,4 +1,4 @@
-import { normalizeUsername } from "@/lib/auth-ops"
+import { normalizeUsername } from "@/lib/auth-validation"
 
 export function profilePublicHref(rawUsername: string) {
   const username = normalizeUsername(rawUsername)

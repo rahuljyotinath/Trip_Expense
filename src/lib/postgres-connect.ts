@@ -20,7 +20,7 @@ export function postgresJsOptions(url: string): postgres.Options<Record<string, 
     prepare: false,
     connect_timeout: 10,
     idle_timeout: 60,
-    ...(needsSsl ? { ssl: "require" as const } : {}),
+    ...(needsSsl ? { ssl: { rejectUnauthorized: true } } : {}),
   }
 }
 

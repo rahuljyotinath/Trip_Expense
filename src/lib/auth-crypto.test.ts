@@ -17,13 +17,13 @@ test("session token uses SESSION_SECRET when set", () => {
     POSTGRES_URL: process.env.POSTGRES_URL,
   }
   env.NODE_ENV = "production"
-  env.SESSION_SECRET = "test-session-secret"
+  env.SESSION_SECRET = "test-session-secret-at-least-32-bytes-long"
   delete env.VERCEL
   delete env.POSTGRES_URL
   try {
     const token = createSessionToken("p_test")
     assert.equal(readSessionToken(token), "p_test")
-    assert.equal(resolveSessionSecret(), "test-session-secret")
+    assert.equal(resolveSessionSecret(), "test-session-secret-at-least-32-bytes-long")
   } finally {
     restore("NODE_ENV", saved.NODE_ENV)
     restore("SESSION_SECRET", saved.SESSION_SECRET)
@@ -32,7 +32,7 @@ test("session token uses SESSION_SECRET when set", () => {
   }
 })
 
-test("production on Vercel derives secret from POSTGRES_URL when SESSION_SECRET unset", () => {
+test("production on Vercel requires an independent session secret", () => {
   const saved = {
     NODE_ENV: process.env.NODE_ENV,
     SESSION_SECRET: process.env.SESSION_SECRET,
@@ -44,8 +44,7 @@ test("production on Vercel derives secret from POSTGRES_URL when SESSION_SECRET 
   env.VERCEL = "1"
   env.POSTGRES_URL = "postgres://example/db"
   try {
-    const token = createSessionToken("p_vercel")
-    assert.equal(readSessionToken(token), "p_vercel")
+    assert.throws(() => createSessionToken("p_vercel"), /SESSION_SECRET/)
   } finally {
     restore("NODE_ENV", saved.NODE_ENV)
     restore("SESSION_SECRET", saved.SESSION_SECRET)

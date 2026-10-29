@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { profileNeedsSetup } from "@/lib/auth-ops"
+import { profileNeedsSetup } from "@/lib/auth-validation"
 import {
   cachedGroupById,
   drainGroupOutbox,
@@ -32,7 +32,7 @@ export function useTripLoad(groupId: string, tripPath: string) {
   const searchParams = useSearchParams()
   const joinCode = (searchParams.get("join") ?? "").trim().toUpperCase() || null
 
-  const [health, setHealth] = useState<Health | null>(null)
+  const health: Health | null = null
   const [profile, setProfile] = useState<PublicProfile | null>(() =>
     typeof window === "undefined" ? null : loadSavedProfile()
   )
@@ -63,20 +63,6 @@ export function useTripLoad(groupId: string, tripPath: string) {
     if (!groupId) return
 
     let cancelled = false
-    const cached = cachedGroupById(groupId)
-
-    if (cached) {
-      setGroup(cached)
-      setFromCache(true)
-      setLoading(false)
-      const saved = loadSavedProfile()
-      if (saved) setProfile(saved)
-    } else {
-      setLoading(true)
-      setFromCache(false)
-    }
-    setLoadError(null)
-
     ;(async () => {
       try {
         const [session, detail] = await Promise.all([

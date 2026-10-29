@@ -15,6 +15,8 @@ npm run dev
 
 Open [http://127.0.0.1:43217](http://127.0.0.1:43217).
 
+To start the development server with automatic port selection, run `./start-server.command` on macOS or `start-server.cmd` on Windows. These launchers use port 43217 when available, choose another port when it is occupied, and report the URL in the terminal. Running a launcher again while the server is active reports the existing server. Keep the terminal open; press Ctrl+C to stop it.
+
 ```bash
 npm test
 npm run build
@@ -41,9 +43,11 @@ POSTGRES_URL=... npm run db:import
 ```
 
 5. Set `SESSION_SECRET` for sign-in cookies (recommended).
-6. Deploy. `/api/health` should report `mode: "postgres"`, `connected: true`, and `tripCount` after relational migration.
+6. Deploy. `/api/health` should report `mode: "postgres"`, `connected: true`, after relational migration. Request `/api/health?stats=1` explicitly for `tripCount` and other ledger statistics.
 
 Locally: copy `.env.example` to `.env.local`. Omit `POSTGRES_URL` to use `data/store.json` on disk.
+
+Database query changes, timing logs, and the read-only connection check are documented in [Database performance](docs/database-performance.md).
 
 ## How a trip works
 

@@ -65,6 +65,7 @@ import {
   commitGroupPatch,
   drainGroupOutbox,
   fetchGroupByCode,
+  requestTripJoin,
   fetchPendingTripInvites,
   respondTripInvite,
   fetchFriends,
@@ -102,9 +103,9 @@ import { settlementBalances, simplifyDebts } from "@/lib/settle"
 import { parseJoinInput } from "@/lib/join"
 import { tripStats } from "@/lib/stats"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
-import { profileNeedsSetup } from "@/lib/auth-ops"
+import { profileNeedsSetup } from "@/lib/auth-validation"
 import { applyGroupPatchOptimistic } from "@/lib/group-patch-optimistic"
-import type { Group, JoinRequest, PublicProfile } from "@/lib/types"
+import type { Group, JoinRequest, PublicProfile, TripJoinPreview } from "@/lib/types"
 import { Shell } from "@/components/trip/trip-shell"
 
 export { formatTripDates } from "@/components/trip/trip-format"
@@ -139,7 +140,7 @@ export function WaybillApp() {
   const [people, setPeople] = useState<string[]>([])
   const [personDraft, setPersonDraft] = useState("")
   const [code, setCode] = useState(joinFromUrl)
-  const [joinGroup, setJoinGroup] = useState<Group | null>(null)
+  const [joinGroup, setJoinGroup] = useState<TripJoinPreview | null>(null)
   const [joinRequest, setJoinRequest] = useState<JoinRequest | null>(null)
   const [pendingInvites, setPendingInvites] = useState<
     Awaited<ReturnType<typeof fetchPendingTripInvites>>
@@ -160,12 +161,11 @@ export function WaybillApp() {
     ;(async () => {
       try {
         setError(null)
-        const [nextHealth, session] = await Promise.all([
-          loadHealth(),
-          fetchSessionProfile(),
-        ])
+        void loadHealth().then((nextHealth) => {
+          if (!cancelled) setHealth(nextHealth)
+        })
+        const session = await fetchSessionProfile()
         if (cancelled) return
-        setHealth(nextHealth)
         if (tripFromUrl) {
           router.replace(`/trip/${encodeURIComponent(tripFromUrl)}`)
           return
@@ -202,23 +202,19 @@ export function WaybillApp() {
         syncProfileToLocalStore(session)
         setScreen("home")
         try {
-          const [list, invites, contacts] = await Promise.all([
-            fetchMyGroups(session.id),
-            fetchPendingTripInvites().catch(() => [] as Awaited<
-              ReturnType<typeof fetchPendingTripInvites>
-            >),
-            fetchFriends().catch(() => [] as Friend[]),
-          ])
+          void fetchPendingTripInvites()
+            .then((invites) => { if (!cancelled) setPendingInvites(invites) })
+            .catch(() => { /* leave invites empty */ })
+          void fetchFriends()
+            .then((contacts) => { if (!cancelled) setFriends(contacts) })
+            .catch(() => { /* leave contacts empty */ })
+          const list = await fetchMyGroups(session.id)
           if (cancelled) return
           persistGroupSnapshots(list)
           setGroups(list)
-          setPendingInvites(invites)
-          setFriends(contacts)
         } catch (err) {
           if (!cancelled) {
             setGroups([])
-            setPendingInvites([])
-            setFriends([])
             setError(errorText(err))
           }
         }
@@ -337,7 +333,7 @@ export function WaybillApp() {
     setBusy(true)
     setError(null)
     try {
-      const next = await claimSeat(joinGroup.id, memberId, profile.id)
+      const next = await claimSeat(joinGroup.id, memberId, profile.id, joinGroup.code)
       setJoinGroup(null)
       await refreshGroups(profile)
       router.push(`/trip/${next.id}`)
@@ -512,35 +508,19 @@ export function WaybillApp() {
           busy={busy}
           onCode={setCode}
           onLookup={onLookupCode}
-          onRequestJoin={() => {
+          onRequestJoin={async () => {
             if (!joinGroup) return
             setBusy(true)
             setError(null)
-            commitGroupPatch(
-              joinGroup,
-              {
-                action: "request-join",
-                code: parseJoinInput(code),
-                profileId: profile.id,
-              },
-              {
-                onApplied: async (next) => {
-                  setJoinGroup(next)
-                  try {
-                    const lookup = await fetchGroupByCode(parseJoinInput(code))
-                    setJoinRequest(lookup.joinRequest)
-                  } catch {
-                    /* keep optimistic */
-                  }
-                  setBusy(false)
-                },
-                onError: (message) => {
-                  setError(message)
-                  setBusy(false)
-                },
-              },
-              profile
-            )
+            try {
+              const lookup = await requestTripJoin(joinGroup.id, parseJoinInput(code))
+              setJoinGroup(lookup.group)
+              setJoinRequest(lookup.joinRequest)
+            } catch (error) {
+              setError(errorText(error))
+            } finally {
+              setBusy(false)
+            }
           }}
           onClaim={onClaim}
           onBack={() => setScreen("home")}
@@ -607,10 +587,7 @@ function Home({
   >(null)
   useEffect(() => {
     const q = contactQuery.trim()
-    if (!q) {
-      setContactPreview(null)
-      return
-    }
+    if (!q) return
     const timer = window.setTimeout(() => {
       void previewProfileForContactQuery(q)
         .then(setContactPreview)
@@ -698,7 +675,7 @@ function Home({
               placeholder="@username"
               value={contactQuery}
               disabled={busy}
-              onChange={(event) => setContactQuery(event.target.value)}
+              onChange={(event) => { setContactQuery(event.target.value); setContactPreview(null) }}
             />
             <Button
               variant="outline"
@@ -1080,7 +1057,7 @@ function JoinTrip({
 }: {
   profile: PublicProfile
   code: string
-  group: Group | null
+  group: TripJoinPreview | null
   joinRequest: JoinRequest | null
   busy: boolean
   onCode: (value: string) => void
@@ -1089,9 +1066,9 @@ function JoinTrip({
   onClaim: (memberId: string) => void
   onBack: () => void
 }) {
-  const suggestion = group ? suggestedMember(group, profile.name) : null
+  const suggestion = group?.members.find((member) => !member.taken && member.name.toLowerCase() === profile.name.toLowerCase())
   const alreadySeated =
-    group?.members.some((member) => member.profileId === profile.id) ?? false
+    group?.alreadySeated ?? false
   const needsApproval = Boolean(group?.joinApprovalRequired)
   const canClaim =
     group &&
@@ -1164,8 +1141,8 @@ function JoinTrip({
             {canClaim ? (
             <div className="space-y-2">
               {group.members.map((member) => {
-                const taken = Boolean(member.profileId)
-                const mine = member.profileId === profile.id
+                const taken = member.taken
+                const mine = group.alreadySeated
                 const suggested = suggestion?.id === member.id
                 return (
                   <button

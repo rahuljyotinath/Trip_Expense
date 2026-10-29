@@ -9,10 +9,10 @@ import { connection } from "next/server"
 import { sessionProfileId } from "@/lib/session"
 import { acceptTripInvite, declineTripInvite } from "@/lib/operations"
 import { groupNameById, pendingInvitesForProfile } from "@/lib/trip-invites"
-import { profileFromId } from "@/lib/auth-ops"
 import { publicProfile } from "@/lib/types"
 import { readBody } from "@/lib/http"
 import { updateStore } from "@/lib/db"
+import { tripJoinPreview } from "@/lib/trip-access"
 
 export async function GET() {
   if (storageMode() === "unconfigured") {
@@ -78,7 +78,8 @@ export async function POST(request: Request) {
     },
       { scope }
     )
-    return json({ group: result.group })
+    return json({ group: body.action === "accept"
+      ? tripJoinPreview(result.group, sessionId, result.store.joinRequests) : null })
   } catch (error) {
     return fail(error)
   }

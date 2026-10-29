@@ -6,7 +6,7 @@
  *   POSTGRES_URL=... npx tsx scripts/db-migrate-relational.ts --data-only
  *   POSTGRES_URL=... npx tsx scripts/db-migrate-relational.ts path/to/store.json
  */
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
 import { postgresUrl } from "./lib/ledger-postgres"
@@ -51,20 +51,17 @@ async function main() {
   }
 
   const args = process.argv.slice(2).filter((item) => !item.startsWith("-"))
-  const sqlOnly = process.argv.includes("--sql-only")
+  const backfill = process.argv.includes("--backfill")
+  const sqlOnly = !backfill && !process.argv.includes("--data-only")
   const dataOnly = process.argv.includes("--data-only")
   const jsonPath = args[0]
 
   const sql = postgres(url, { max: 1, prepare: false })
   try {
     if (!dataOnly) {
-      const hasLedger = await sql<{ reg: string | null }[]>`
-        SELECT to_regclass('public.ledger_store')::text AS reg
-      `
-      if (!hasLedger[0]?.reg) {
-        await applySqlFile(sql, "supabase/migrations/001_ledger_store.sql")
+      for (const file of readdirSync(path.join(process.cwd(), "supabase/migrations")).filter((name) => /^\d+.*\.sql$/.test(name)).sort()) {
+        await applySqlFile(sql, `supabase/migrations/${file}`)
       }
-      await applySqlFile(sql, "supabase/migrations/002_relational_ledger.sql")
       console.log("Schema migration complete.")
     }
 

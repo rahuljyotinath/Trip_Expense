@@ -7,4 +7,4 @@ create table if not exists ledger_store (
   updated_at timestamptz not null default now()
 );
 
-alter table ledger_store disable row level security;
+alter table ledger_store enable row level security;

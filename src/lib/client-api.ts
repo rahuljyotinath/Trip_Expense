@@ -3,6 +3,7 @@ import {
   normalizeStore,
   publicProfile,
   type Group,
+  type TripJoinPreview,
   type JoinRequest,
   type PublicProfile,
   type PublicProfileView,
@@ -12,7 +13,6 @@ import {
   type StorageMode,
   type Store,
 } from "@/lib/types"
-import { logIn, signUp, updateProfile } from "@/lib/auth-ops"
 import {
   addExpense,
   addMember,
@@ -46,6 +46,7 @@ import {
   findProfileForContactSearch,
 } from "@/lib/trip-contacts"
 import { publicProfileView } from "@/lib/types"
+import { tripJoinPreview } from "@/lib/trip-access"
 import { nowIso } from "@/lib/ids"
 import {
   browserOutbox,
@@ -207,10 +208,14 @@ function inviteNetworkError(error: unknown): never {
   throw error
 }
 
+const activeRequests = new Set<AbortController>()
+let sessionEpoch = 0
 const REQUEST_TIMEOUT_MS = 25_000
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
+  const epoch = sessionEpoch
+  activeRequests.add(controller)
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const parentSignal = init?.signal
   const onParentAbort = () => controller.abort()
@@ -226,12 +231,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     })
     const data = (await response.json().catch(() => ({}))) as T & { error?: string }
-    if (response.status === 503 || data.error === "unconfigured") {
-      mode = "unconfigured"
-      throw new Error("unconfigured")
-    }
+    if (epoch !== sessionEpoch) throw new DOMException("Session changed.", "AbortError")
     if (!response.ok) {
-      throw new Error(data.error || "Request failed.")
+      const error = new Error(data.error || "Request failed.") as Error & { status: number }
+      error.status = response.status
+      throw error
     }
     return data
   } catch (error) {
@@ -240,6 +244,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw error
   } finally {
+    activeRequests.delete(controller)
     clearTimeout(timeout)
     if (parentSignal) parentSignal.removeEventListener("abort", onParentAbort)
   }
@@ -261,6 +266,13 @@ export function syncProfileToLocalStore(profile: PublicProfile) {
 }
 
 export function saveProfile(profile: PublicProfile) {
+  const previous = loadSavedProfile()
+  if (previous && previous.id !== profile.id) {
+    sessionEpoch += 1
+    for (const controller of activeRequests) controller.abort()
+    memoryGroupById.clear()
+    writeLocalStore(emptyStore())
+  }
   window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
   syncProfileToLocalStore(profile)
 }
@@ -289,29 +301,20 @@ export async function signUpUser(input: {
   password: string
   name?: string
 }) {
-  if (mode === "unconfigured") {
-    const result = signUp(readLocalStore(), input)
-    writeLocalStore(result.store)
-    const pub = publicProfile(result.profile)
-    saveProfile(pub)
-    return pub
-  }
-  const data = await request<{ profile: PublicProfile }>("/api/auth/signup", {
+  if (mode === "unconfigured") throw new Error("Server temporarily unavailable. Try again when connected.")
+
+  const data = await request<{ profile: PublicProfile; recoveryCode: string }>("/api/auth/signup", {
     method: "POST",
     body: JSON.stringify(input),
   })
   saveProfile(data.profile)
-  return data.profile
+  return { ...data.profile, recoveryCode: data.recoveryCode }
 }
 
 export async function logInUser(input: { username: string; password: string }) {
   syncModeFromPersistedHealth()
-  if (mode === "unconfigured") {
-    const result = logIn(readLocalStore(), input)
-    const pub = publicProfile(result.profile)
-    saveProfile(pub)
-    return pub
-  }
+  if (mode === "unconfigured") throw new Error("Server temporarily unavailable. Try again when connected.")
+
   const data = await request<{ profile: PublicProfile }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(input),
@@ -327,17 +330,8 @@ export async function updateProfileUser(input: {
   upiId?: string | null
 }) {
   const saved = loadSavedProfile()
-  if (mode === "unconfigured") {
-    if (!saved?.id) throw new Error("Sign in again.")
-    const result = updateProfile(readLocalStore(), {
-      profileId: saved.id,
-      ...input,
-    })
-    writeLocalStore(result.store)
-    const pub = publicProfile(result.profile)
-    saveProfile(pub)
-    return pub
-  }
+  if (mode === "unconfigured") throw new Error("Server temporarily unavailable. Try again when connected.")
+
   const data = await request<{ profile: PublicProfile }>("/api/profile", {
     method: "PATCH",
     body: JSON.stringify(input),
@@ -347,10 +341,13 @@ export async function updateProfileUser(input: {
 }
 
 export async function logoutUser() {
+  sessionEpoch += 1
+  for (const controller of activeRequests) controller.abort()
+  memoryGroupById.clear()
   clearSavedProfile()
   if (typeof window !== "undefined") {
     writeLocalStore(emptyStore())
-    browserOutbox().clear()
+    // Pending edits remain isolated under the originating account until sign-in.
   }
   if (mode !== "unconfigured") {
     try {
@@ -489,7 +486,7 @@ export async function fetchMyGroups(profileId: string) {
 }
 
 export type GroupCodeLookup = {
-  group: Group
+  group: TripJoinPreview
   joinRequest: JoinRequest | null
 }
 
@@ -501,14 +498,14 @@ export async function fetchGroupByCode(code: string): Promise<GroupCodeLookup> {
     if (!group) throw new Error("No trip uses that code.")
     const profileId = loadSavedProfile()?.id ?? ""
     return {
-      group,
+      group: tripJoinPreview(group, profileId, store.joinRequests),
       joinRequest: profileId
         ? joinRequestForProfile(store, group.id, profileId)
         : null,
     }
   }
   try {
-    const data = await request<{ group: Group; joinRequest?: JoinRequest | null }>(
+    const data = await request<{ group: TripJoinPreview; joinRequest?: JoinRequest | null }>(
       `/api/groups?code=${encodeURIComponent(code)}`
     )
     return { group: data.group, joinRequest: data.joinRequest ?? null }
@@ -549,7 +546,7 @@ export async function fetchPendingTripInvites(): Promise<PendingTripInvite[]> {
 
 export async function respondTripInvite(action: "accept" | "decline", inviteId: string) {
   if (mode === "unconfigured") throw new Error("Sign in and connect storage first.")
-  const data = await request<{ group?: Group }>("/api/trip-invites", {
+  const data = await request<{ group?: TripJoinPreview | null }>("/api/trip-invites", {
     method: "POST",
     body: JSON.stringify({ action, inviteId }),
   })
@@ -626,47 +623,12 @@ async function requestGroupById(
     joinCode && joinCode.trim()
       ? `?join=${encodeURIComponent(joinCode.trim().toUpperCase())}`
       : ""
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  try {
-    const response = await fetch(`/api/groups/${id}${joinQuery}`, {
-      credentials: "include",
-      signal: controller.signal,
-      headers: { "Content-Type": "application/json" },
-    })
-    const data = (await response.json().catch(() => ({}))) as {
-      group?: Group
-      joinRequest?: JoinRequest | null
-      pendingJoinRequests?: PendingJoinRequestRow[]
-      pendingTripInvites?: TripInvite[]
-      linkedProfiles?: LinkedTripProfile[]
-      viewerTripInvite?: TripInvite | null
-      error?: string
-    }
-    if (response.status === 503 || data.error === "unconfigured") {
-      mode = "unconfigured"
-      throw new Error("unconfigured")
-    }
-    if (!response.ok) {
-      throw new Error(data.error || "Request failed.")
-    }
-    if (!data.group) throw new Error("Trip not found.")
-    return {
-      group: data.group,
-      joinRequest: data.joinRequest ?? null,
-      pendingJoinRequests: data.pendingJoinRequests ?? [],
-      pendingTripInvites: data.pendingTripInvites ?? [],
-      linkedProfiles: data.linkedProfiles ?? [],
-      viewerTripInvite: data.viewerTripInvite ?? null,
-    }
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Request timed out. Check your connection and try again.")
-    }
-    throw error
-  } finally {
-    clearTimeout(timeout)
-  }
+  const data = await request<Partial<GroupFetchDetail> & { error?: string }>(`/api/groups/${id}${joinQuery}`)
+  if (!data.group) throw new Error("Trip not found.")
+  return { group: data.group, joinRequest: data.joinRequest ?? null,
+    pendingJoinRequests: data.pendingJoinRequests ?? [], pendingTripInvites: data.pendingTripInvites ?? [],
+    linkedProfiles: data.linkedProfiles ?? [], viewerTripInvite: data.viewerTripInvite ?? null }
+
 }
 
 export async function fetchGroupDetail(
@@ -896,11 +858,12 @@ function runGroupPatchMutator(
       restore: Boolean(body.restore),
     })
   }
-  if (action === "import-trip-csv") {
+  if (action === "import-trip-csv" || action === "import-trip-json") {
     return importTripCsv(store, {
       groupId: id,
       profileId,
       csv: String(body.csv ?? ""),
+      format: action === "import-trip-json" ? "json" : undefined,
     })
   }
   if (action === "cover-member") {
@@ -944,7 +907,7 @@ export function previewGroupPatch(
 }
 
 function usesDurableOutbox() {
-  return typeof window !== "undefined" && mode !== "unconfigured"
+  return typeof window !== "undefined"
 }
 
 type DrainResultLike = {
@@ -975,12 +938,17 @@ async function patchGroupNetwork(id: string, body: Record<string, unknown>) {
 
 export async function drainGroupOutbox(): Promise<DrainResultLike> {
   if (drainInFlight) return drainInFlight
+  const epoch = sessionEpoch
   const run = (async () => {
-    return browserOutbox().drain({
-      isOnline: () => typeof navigator !== "undefined" && navigator.onLine,
+    if (typeof navigator === "undefined" || !navigator.onLine) return { sent: 0, remaining: browserOutbox().pendingCount(), paused: true, dropped: 0 }
+    const profile = await fetchSessionProfile()
+    if (!profile || epoch !== sessionEpoch) return { sent: 0, remaining: browserOutbox().pendingCount(), paused: true, dropped: 0 }
+    return browserOutbox(profile.id).drain({
+      isOnline: () => epoch === sessionEpoch && typeof navigator !== "undefined" && navigator.onLine,
       isRetryable: isRetryableSyncError,
       send: async (op: OutboxOp) => patchGroupNetwork(op.groupId, op.body),
       onSent: (_op, result) => {
+        if (epoch !== sessionEpoch) return
         if (!result || typeof result !== "object" || !("id" in result)) return
         persistGroupSnapshot(applyPendingOutbox(result as Group))
       },
@@ -1035,6 +1003,7 @@ export function commitGroupPatch(
       groupId: group.id,
       body: stamped,
       createdAt: nowIso(),
+      profileId: (actor ?? loadSavedProfile())?.id,
     })
     void (async () => {
       try {
@@ -1115,20 +1084,7 @@ async function ensureClientMode(options?: { skipHealth?: boolean }) {
 async function patchGroup(id: string, body: Record<string, unknown>, groupHint?: Group) {
   await ensureClientMode()
   if (!id.trim()) throw new Error("Trip not found.")
-  if (mode === "unconfigured") {
-    const saved = loadSavedProfile()
-    if (!saved?.id) throw new Error("Sign in again.")
-    const group =
-      groupHint ?? readLocalStore().groups.find((item) => item.id === id) ?? null
-    if (!group) throw new Error("Trip not found.")
-    const profileId = resolvePatchProfileId(body, saved.id)
-    let store = preparePatchStore(readLocalStore(), group, saved)
-    store = ensureProfileForPatch(store, group, profileId)
-    const result = runGroupPatchMutator(store, id, body, saved.id)
-    if (!result) throw new Error("Unknown action.")
-    writeLocalStore(result.store)
-    return result.group
-  }
+  if (mode === "unconfigured") throw new Error("Server temporarily unavailable. Your edits remain saved on this device.")
   const data = await request<{ group: Group }>(`/api/groups/${id}`, {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -1138,8 +1094,8 @@ async function patchGroup(id: string, body: Record<string, unknown>, groupHint?:
   return merged
 }
 
-export function claimSeat(groupId: string, memberId: string, profileId: string) {
-  return patchGroup(groupId, { action: "claim", memberId, profileId })
+export function claimSeat(groupId: string, memberId: string, profileId: string, code?: string) {
+  return patchGroup(groupId, { action: "claim", memberId, profileId, code })
 }
 
 export function inviteName(groupId: string, name: string) {
@@ -1224,4 +1180,16 @@ export function crossPayment(
   restore = false
 ) {
   return patchGroup(groupId, { action: "void-payment", paymentId, profileId, restore })
+}
+
+export async function requestTripJoin(groupId: string, code: string): Promise<GroupCodeLookup> {
+  return request<GroupCodeLookup>(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify({ action: "request-join", code }) })
+}
+
+export function failedOutboxCount(groupId: string) { return browserOutbox().failed().filter((op) => op.groupId === groupId).length }
+export function retryFailedOutbox() { browserOutbox().retryFailed(); return drainGroupOutbox() }
+export function downloadPendingEdits() {
+  const data = { pending: browserOutbox().list(), failed: browserOutbox().failed(), legacy: window.localStorage.getItem("waybill.outbox") }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }))
+  const link = document.createElement("a"); link.href = url; link.download = "tripzy-unsynced-edits.json"; link.click(); URL.revokeObjectURL(url)
 }

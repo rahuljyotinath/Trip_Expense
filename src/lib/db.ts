@@ -1,3 +1,4 @@
+import { instrumentSql } from "./request-performance"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
@@ -49,7 +50,7 @@ import { storesEqual } from "./store-compare"
 export { postgresConfig, storageMode } from "./storage-mode"
 export type { MutationScope } from "./ledger-repository"
 
-const LOCAL_PATH = path.join(process.cwd(), "data", "store.json")
+const LOCAL_PATH = path.join(process.env.TRIPZY_DATA_DIR || path.join(process.cwd(), "data"), "store.json")
 const LEDGER_ROW_ID = "main"
 
 const LOAD_CACHE_MS =
@@ -96,7 +97,7 @@ export function getSql(): Sql {
   const url = postgresConfig()
   if (!url) throw new Error("Postgres is not configured.")
   if (!postgresClient) {
-    postgresClient = postgres(url, postgresJsOptions(url))
+    postgresClient = instrumentSql(postgres(url, postgresJsOptions(url)))
   }
   return postgresClient
 }
@@ -175,7 +176,9 @@ async function readLocal(): Promise<Loaded> {
 
 async function writeLocal(store: Store) {
   await fs.mkdir(path.dirname(LOCAL_PATH), { recursive: true })
-  await fs.writeFile(LOCAL_PATH, `${JSON.stringify(store, null, 2)}\n`, "utf8")
+  const temporary = `${LOCAL_PATH}.${crypto.randomUUID()}.tmp`
+  await fs.writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, { encoding: "utf8", mode: 0o600 })
+  await fs.rename(temporary, LOCAL_PATH)
 }
 
 async function readPostgresBlob(): Promise<Loaded> {
@@ -720,7 +723,7 @@ export async function updateStore<T>(
   mutator: (store: Store) => T | Promise<T>,
   options?: UpdateStoreOptions
 ) {
-  return enqueueWrite(async () => {
+  const run = async () => {
     let lastError: unknown
     const scope = options?.scope
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -744,7 +747,8 @@ export async function updateStore<T>(
       }
     }
     throw lastError instanceof Error ? lastError : new Error("Could not save the ledger.")
-  })
+  }
+  return storageMode() === "local" ? enqueueWrite(run) : run()
 }
 
 export async function migrateBlobToRelationalTables(store: Store) {

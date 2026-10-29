@@ -1,3 +1,4 @@
+import { sharesComplete } from "./shares"
 import { uid } from "@/lib/ids"
 import { normalizeGroup, type Expense, type Group, type Member, type Payment } from "@/lib/types"
 
@@ -34,6 +35,7 @@ const V1_COLUMNS = [
 type CsvRow = Partial<Record<(typeof V1_COLUMNS)[number], string>>
 
 function escapeCell(value: string) {
+  if (/^[\s]*[=+\-@\']|^[\t\r\n]/.test(value)) value = "\'" + value
   if (/[",\n\r]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`
   }
@@ -83,6 +85,7 @@ function parseCsv(text: string): string[][] {
     }
     cell += ch
   }
+  if (inQuotes) throw new Error("Invalid CSV: unclosed quoted field.")
   if (cell.length > 0 || row.length > 0) {
     row.push(cell)
     rows.push(row)
@@ -96,7 +99,8 @@ function tableToObjects(table: string[][]): Record<string, string>[] {
   return table.slice(1).map((cells) => {
     const row: Record<string, string> = {}
     header.forEach((key, i) => {
-      const value = cells[i]?.trim()
+      const raw = cells[i]?.trim()
+      const value = raw?.startsWith("\'") && /^[\s]*[=+\-@\']|^[\t\r\n]/.test(raw.slice(1)) ? raw.slice(1) : raw
       if (value) row[key] = value
     })
     return row
@@ -123,6 +127,7 @@ function parseVoided(raw: string | undefined): string | null {
 function parseSections(text: string): Map<string, string[][]> {
   const sections = new Map<string, string[][]>()
   let current: string | null = null
+  let quoted = false
   const lineBuffer: string[] = []
 
   function flushSection() {
@@ -135,8 +140,8 @@ function parseSections(text: string): Map<string, string[][]> {
 
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("#")) continue
-    const sectionMatch = trimmed.match(/^\[(.+)\]$/)
+    if (!quoted && (!trimmed || trimmed.startsWith("#"))) continue
+    const sectionMatch = !quoted && trimmed.match(/^\[(.+)\]$/)
     if (sectionMatch) {
       flushSection()
       current = sectionMatch[1]!.trim().toLowerCase()
@@ -144,6 +149,7 @@ function parseSections(text: string): Map<string, string[][]> {
     }
     if (!current) continue
     lineBuffer.push(line)
+    for (let i = 0; i < line.length; i++) { if (line[i] === '"') { if (quoted && line[i + 1] === '"') i++; else quoted = !quoted } }
   }
   flushSection()
   return sections
@@ -174,7 +180,7 @@ export function exportTripCsv(raw: Group): string {
       : ""
     lines.push(rowLine([member.name, cover]))
   }
-  lines.push("", "[expenses]", rowLine(["date", "amount", "reason", "paid_by", "participants", "split", "voided"]))
+  lines.push("", "[expenses]", rowLine(["date", "amount", "reason", "paid_by", "participants", "split", "voided", "shares_json"]))
   for (const expense of group.expenses) {
     const participants = expense.participantIds
       .map((id) => memberNameById(group, id))
@@ -188,6 +194,7 @@ export function exportTripCsv(raw: Group): string {
         participants,
         expense.split,
         voidedLabel(expense.voidedAt),
+        expense.split === "percent" ? JSON.stringify(Object.fromEntries(expense.participantIds.map((id) => [memberNameById(group, id), expense.shares[id]]))) : "",
       ])
     )
   }
@@ -285,7 +292,7 @@ function parseTripCsvV2(text: string): ParsedTripCsv {
       paidByMemberId: resolveMemberName(row.paid_by ?? "", "Payer"),
       participantIds,
       split,
-      shares: {},
+      shares: split === "percent" ? parseSharesByName(row.shares_json, participantIds, nameToId) : {},
       createdByProfileId: "",
       createdAt: new Date(0).toISOString(),
       voidedAt: parseVoided(row.voided),
@@ -505,7 +512,7 @@ function isV1Csv(text: string) {
   return header.includes("record") && header.includes("paid_by_member_id")
 }
 
-export function parseTripCsv(text: string): ParsedTripCsv {
+function parseTripCsvUnchecked(text: string): ParsedTripCsv {
   const normalized = text.replace(/^\uFEFF/, "")
   if (isV2Csv(normalized)) return parseTripCsvV2(normalized)
   if (isV1Csv(normalized)) return parseTripCsvV1(normalized)
@@ -530,4 +537,44 @@ export function downloadTripCsvFile(group: Group) {
   anchor.download = tripCsvFilename(group)
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+function parseSharesByName(raw: string | undefined, participantIds: string[], names: Map<string, string>) {
+  if (!raw) throw new Error("CSV percent rows require shares_json. Re-export the original trip with percentages included.")
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { throw new Error("Invalid CSV percentage shares.") }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid CSV percentage shares.")
+  const shares = Object.fromEntries(Object.entries(parsed).map(([name, value]) => [names.get(name.toLowerCase()) ?? "", value])) as Record<string, number>
+  if (!sharesComplete(participantIds, shares)) throw new Error("CSV percentages must be positive and add to 100.")
+  return shares
+}
+
+export function validateImportedTrip(parsed: ParsedTripCsv) {
+  const date = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value
+  const fail = () => { throw new Error("Invalid import: check dates, amounts, names, member references, covers and percentage shares.") }
+  if (!parsed.members.length || parsed.members.length > 500 || parsed.expenses.length + parsed.payments.length > 10000) fail()
+  if ((parsed.trip.startDate && !date(parsed.trip.startDate)) || (parsed.trip.endDate && !date(parsed.trip.endDate))) fail()
+  const byId = new Map(parsed.members.map((m) => [m.id, m]))
+  const names = new Set<string>()
+  for (const member of parsed.members) {
+    if (typeof member.name !== "string" || !member.name.trim() || member.name.length > 40 || byId.size !== parsed.members.length || names.has(member.name.toLowerCase())) fail()
+    names.add(member.name.toLowerCase())
+    const seen = new Set([member.id]); let cover = member.coveredByMemberId
+    while (cover) { if (seen.has(cover) || !byId.has(cover)) fail(); seen.add(cover); cover = byId.get(cover)!.coveredByMemberId }
+  }
+  const entryIds = new Set<string>()
+  for (const entry of [...parsed.expenses, ...parsed.payments]) {
+    if (!entry.id || entryIds.has(entry.id) || !date(entry.date) || !Number.isFinite(entry.amount) || entry.amount < 0.01 || entry.amount > 1_000_000_000) fail()
+    entryIds.add(entry.id)
+  }
+  for (const expense of parsed.expenses) {
+    if (!expense.reason.trim() || expense.reason.length > 120 || !byId.has(expense.paidByMemberId) || !expense.participantIds.length || new Set(expense.participantIds).size !== expense.participantIds.length || expense.participantIds.some((id) => !byId.has(id)) || (expense.split === "percent" && !sharesComplete(expense.participantIds, expense.shares))) fail()
+  }
+  for (const payment of parsed.payments) if (!byId.has(payment.fromMemberId) || !byId.has(payment.toMemberId) || payment.fromMemberId === payment.toMemberId) fail()
+  return parsed
+}
+
+export function parseTripCsv(text: string): ParsedTripCsv {
+  if (text.length > 2000000) throw new Error("CSV is too large.")
+  return validateImportedTrip(parseTripCsvUnchecked(text))
 }

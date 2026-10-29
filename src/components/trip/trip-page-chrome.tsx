@@ -21,6 +21,9 @@ import {
   drainGroupOutbox,
   outboxPendingCount,
   subscribeOutbox,
+  failedOutboxCount,
+  retryFailedOutbox,
+  downloadPendingEdits,
 } from "@/lib/client-api"
 import {
   groupPaidByMember,
@@ -29,6 +32,7 @@ import {
 } from "@/lib/ledger-display"
 import { formatMoney } from "@/lib/money"
 import { tripStats } from "@/lib/stats"
+import { downloadTripJsonFile, parseTripJson } from "@/lib/trip-json"
 import { downloadTripCsvFile, parseTripCsv } from "@/lib/trip-csv"
 import { TripJoinLinkActions } from "@/components/trip/trip-join-link-actions"
 import type { Group, PublicProfile } from "@/lib/types"
@@ -43,14 +47,16 @@ function TripSyncBanner({
   fromCache: boolean
 }) {
   const [pending, setPending] = useState(() => outboxPendingCount(groupId))
+  const [failed, setFailed] = useState(() => failedOutboxCount(groupId))
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine
   )
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
-    setPending(outboxPendingCount(groupId))
-    const unsub = subscribeOutbox(() => setPending(outboxPendingCount(groupId)))
+    const update = () => { setPending(outboxPendingCount(groupId)); setFailed(failedOutboxCount(groupId)) }
+    const unsub = subscribeOutbox(update)
+    window.addEventListener("storage", update)
     function onOnline() {
       setOnline(true)
       setSyncing(true)
@@ -64,11 +70,19 @@ function TripSyncBanner({
     window.addEventListener("offline", onOffline)
     return () => {
       unsub()
+      window.removeEventListener("storage", update)
       window.removeEventListener("online", onOnline)
       window.removeEventListener("offline", onOffline)
     }
   }, [groupId])
 
+  if (failed > 0 || (online && pending > 0)) return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" role="status">
+      <span>{failed > 0 ? `${failed} edits need attention.` : `${pending} edits waiting to sync. Sign in again if your session expired.`}</span>
+      <Button variant="link" size="xs" onClick={() => { setSyncing(true); void retryFailedOutbox().finally(() => setSyncing(false)) }} disabled={syncing || !online}>Retry</Button>
+      <Button variant="link" size="xs" onClick={downloadPendingEdits}>Download saved edits</Button>
+    </div>
+  )
   if (syncing) {
     return <p className="mt-1 text-xs text-muted-foreground">Syncing…</p>
   }
@@ -76,7 +90,7 @@ function TripSyncBanner({
     const waiting = pending > 0 ? ` ${pending} waiting to sync.` : ""
     return (
       <p className="mt-1 text-xs text-muted-foreground">
-        Saved on this phone.{waiting} Will sync when you're back online.
+        Saved on this phone.{waiting} Will sync when you&apos;re back online.
       </p>
     )
   }
@@ -334,16 +348,21 @@ export function TripPageChrome({
             </Button>
           </div>
           {profile && isTripAdmin ? (
+            <>
+            <Button variant="outline" onClick={() => downloadTripJsonFile(group)}>
+              <Download /> Export JSON
+            </Button>
             <Button variant="outline" onClick={() => downloadTripCsvFile(group)}>
               <Download /> Export CSV
             </Button>
+            </>
           ) : null}
           {isTripAdmin && profile ? (
             <>
               <input
                 ref={importInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".json,application/json,.csv,text/csv"
                 className="hidden"
                 onChange={async (event) => {
                   const file = event.target.files?.[0]
@@ -351,11 +370,12 @@ export function TripPageChrome({
                   if (!file) return
                   try {
                     const text = await file.text()
-                    parseTripCsv(text)
+                    if (text.trimStart().replace(/^\uFEFF/, "").startsWith("{")) parseTripJson(text)
+                    else parseTripCsv(text)
                     onImportCsvReady(text)
                   } catch (error) {
                     onImportCsvError(
-                      error instanceof Error ? error.message : "Could not read that CSV."
+                      error instanceof Error ? error.message : "Could not read that file."
                     )
                   }
                 }}
@@ -365,7 +385,7 @@ export function TripPageChrome({
                 disabled={busy}
                 onClick={() => importInputRef.current?.click()}
               >
-                <Upload /> Import CSV
+                <Upload /> Import JSON / CSV
               </Button>
             </>
           ) : null}

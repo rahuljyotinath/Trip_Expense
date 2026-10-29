@@ -9,7 +9,8 @@ import {
 } from "@/lib/ledger-day-order"
 import { joinCode, nowIso, uid } from "@/lib/ids"
 import { sharesComplete } from "@/lib/shares"
-import { parseTripCsv } from "@/lib/trip-csv"
+import { parseTripJson } from "@/lib/trip-json"
+import { parseTripCsv, validateImportedTrip } from "@/lib/trip-csv"
 import {
   normalizeInviteEmail,
   normalizeInvitePhone,
@@ -328,7 +329,7 @@ export function claimMember(
 }
 
 function requireDate(date: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) {
     throw new Error("Date must be YYYY-MM-DD.")
   }
 }
@@ -402,7 +403,7 @@ function validateExpenseInput(
   }
 ) {
   requireDate(input.date)
-  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+  if (!Number.isFinite(input.amount) || input.amount < 0.01 || input.amount > 1_000_000_000) {
     throw new Error("Amount must be more than zero.")
   }
   const reason = cleanName(input.reason, 120)
@@ -541,7 +542,7 @@ export function addPayment(
   const group = requireGroup(store, input.groupId)
   requireSeated(group, profile.id)
   requireDate(input.date)
-  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+  if (!Number.isFinite(input.amount) || input.amount < 0.01 || input.amount > 1_000_000_000) {
     throw new Error("Amount must be more than zero.")
   }
   if (input.fromMemberId === input.toMemberId) {
@@ -630,14 +631,41 @@ export function voidPayment(
 
 export function importTripCsv(
   store: Store,
-  input: { groupId: string; profileId: string; csv: string }
+  input: { groupId: string; profileId: string; csv: string; format?: "json" }
 ) {
   const group = requireGroup(store, input.groupId)
   if (!isTripAdmin(group, input.profileId)) {
-    throw new Error("Only a trip admin can import a CSV into this trip.")
+    throw new Error("Only a trip admin can import a file into this trip.")
   }
   requireSeated(group, input.profileId)
-  const parsed = parseTripCsv(input.csv)
+  if (input.csv.length > 2000000) throw new Error("Invalid import: file is too large.")
+  const parsed = input.format === "json" ? parseTripJson(input.csv) : parseTripCsv(input.csv)
+  validateImportedTrip(parsed)
+  // Profile links in a file are not trusted. Preserve only identities already
+  // linked to this trip, matching stable ids first and unambiguous names second.
+  const memberMap = new Map<string, string>()
+  const members = parsed.members.map((member) => {
+    const existing = group.members.find((item) => item.id === member.id) ?? group.members.find((item) => item.name.toLowerCase() === member.name.toLowerCase())
+    const id = existing?.id ?? uid("m")
+    memberMap.set(member.id, id)
+    return { ...member, id, profileId: existing?.profileId ?? null }
+  })
+  if (!members.some((member) => member.profileId === input.profileId)) throw new Error("Invalid import: keep your linked roster nickname so you retain access.")
+  for (let i = 0; i < members.length; i++) members[i].coveredByMemberId = parsed.members[i].coveredByMemberId ? memberMap.get(parsed.members[i].coveredByMemberId!)! : null
+  const entryMap = new Map<string, string>()
+  const expenses = parsed.expenses.map((entry) => {
+    const old = group.expenses.find((item) => item.id === entry.id)
+    const id = old?.id ?? uid("e"); entryMap.set(entry.id, id)
+    return { ...entry, id, createdByProfileId: old?.createdByProfileId ?? input.profileId,
+      paidByMemberId: memberMap.get(entry.paidByMemberId)!, participantIds: entry.participantIds.map((id) => memberMap.get(id)!),
+      shares: Object.fromEntries(Object.entries(entry.shares).map(([id, share]) => [memberMap.get(id)!, share])) }
+  })
+  const payments = parsed.payments.map((entry) => {
+    const old = group.payments.find((item) => item.id === entry.id)
+    const id = old?.id ?? uid("pay"); entryMap.set(entry.id, id)
+    return { ...entry, id, createdByProfileId: old?.createdByProfileId ?? input.profileId,
+      fromMemberId: memberMap.get(entry.fromMemberId)!, toMemberId: memberMap.get(entry.toMemberId)! }
+  })
   const currency = parsed.trip.currency ?? group.currency
   if (!/^[A-Z]{3}$/.test(currency)) {
     throw new Error("Currency must be a 3-letter code.")
@@ -658,10 +686,10 @@ export function importTripCsv(
     currency,
     startDate,
     endDate,
-    members: parsed.members,
-    expenses: parsed.expenses,
-    payments: parsed.payments,
-    ledgerDayOrder: undefined,
+    members,
+    expenses,
+    payments,
+    ledgerDayOrder: "ledgerDayOrder" in parsed && parsed.ledgerDayOrder ? Object.fromEntries(Object.entries(parsed.ledgerDayOrder).map(([day, ids]) => [day, (ids as string[]).map((id) => entryMap.get(id)!)])) : undefined,
   }
   return { store: replaceGroup(store, normalizeGroup(next)), group: normalizeGroup(next) }
 }
@@ -771,11 +799,15 @@ export function sendTripInvite(
   requireSeated(group, input.profileId)
   let invitedEmail = normalizeInviteEmail(input.email)
   let invitedPhone = normalizeInvitePhone(input.phone)
-  const targetId = input.targetProfileId?.trim()
+  const targetId = input.targetProfileId?.trim() ||
+    (input.email?.trim().startsWith("@") ? findProfileForContactSearch(store, input.email.trim())?.id : null)
+  if (targetId && !store.profiles.some((item) => item.id === targetId)) {
+    throw new Error("Profile not found.")
+  }
   if (targetId) {
     const target = store.profiles.find((item) => item.id === targetId)
     if (target) {
-      invitedEmail = invitedEmail ?? normalizeInviteEmail(target.email)
+      invitedEmail = input.email?.trim().startsWith("@") ? normalizeInviteEmail(target.email) : invitedEmail ?? normalizeInviteEmail(target.email)
       invitedPhone = invitedPhone ?? normalizeInvitePhone(target.phone)
     }
   }
@@ -793,7 +825,7 @@ export function sendTripInvite(
       invitedPhone = normalizeInvitePhone(found.phone)
     }
   }
-  if (!invitedEmail && !invitedPhone) {
+  if (!invitedEmail && !invitedPhone && !targetId) {
     throw new Error("Enter an email, phone, or @username to invite.")
   }
   const invite: TripInvite = {
@@ -801,6 +833,7 @@ export function sendTripInvite(
     groupId: group.id,
     invitedEmail,
     invitedPhone,
+    invitedProfileId: targetId || null,
     status: "pending",
     createdByProfileId: input.profileId,
     createdAt: nowIso(),
@@ -917,6 +950,14 @@ export function acceptTripInvite(
   if (isGroupMember(input.profileId, requireGroup(store, invite.groupId))) {
     throw new Error("You are already on this trip.")
   }
+  // Matching a self-reported contact is not identity verification. Keep the
+  // invitation available for its real recipient; only an admin may approve.
+  if (!invite.invitedProfileId) {
+    return requestJoin(store, {
+      groupId: invite.groupId, profileId: profile.id,
+      code: requireGroup(store, invite.groupId).code,
+    })
+  }
   const updatedInvites = tripInvites(store).map((item) =>
     item.id === invite.id
       ? {
@@ -944,6 +985,10 @@ export function declineTripInvite(
   if (invite.status !== "pending") throw new Error("That invite is no longer open.")
   if (!profileMatchesInvite(profile, invite)) {
     throw new Error("This invite is for a different email or phone.")
+  }
+  if (!invite.invitedProfileId) {
+    // Do not let an unverified contact consume somebody else's invitation.
+    return { store }
   }
   const updatedInvites = tripInvites(store).map((item) =>
     item.id === invite.id
@@ -1008,7 +1053,7 @@ export function requestJoin(
     decidedByProfileId: null,
   }
   const next = replaceStoreMeta(store, {
-    joinRequests: [...joinRequests(store), joinRequest],
+    joinRequests: [...joinRequests(store).filter((item) => item.groupId !== group.id || item.profileId !== profile.id), joinRequest],
   })
   return { store: next, group, joinRequest }
 }
@@ -1069,7 +1114,7 @@ export function rejectJoinRequest(
 
 export function claimMemberWithJoinApproval(
   store: Store,
-  input: { groupId: string; memberId: string; profileId: string }
+  input: { groupId: string; memberId: string; profileId: string; code?: string }
 ) {
   const group = requireGroup(store, input.groupId)
   if (group.joinApprovalRequired && !isGroupMember(input.profileId, group)) {
@@ -1077,6 +1122,10 @@ export function claimMemberWithJoinApproval(
     if (!request || request.status !== "approved") {
       throw new Error("Trip admin must approve your join request before you claim a seat.")
     }
+  }
+  if (!group.joinApprovalRequired && !isGroupMember(input.profileId, group) &&
+      normalizeJoinCode(input.code ?? "") !== normalizeJoinCode(group.code)) {
+    throw new Error("Join code does not match this trip.")
   }
   return claimMember(store, input)
 }

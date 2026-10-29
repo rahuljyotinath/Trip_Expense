@@ -17,14 +17,16 @@ function sessionReady() {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await connection()
   const mode = storageMode()
   const ready = sessionReady()
   if (mode === "postgres") {
     const [postgres, stats] = await Promise.all([
       probePostgres(),
-      readLedgerHealthStats(),
+      new URL(request.url).searchParams.get("stats") === "1"
+        ? readLedgerHealthStats()
+        : Promise.resolve(null),
     ])
     return json({
       mode,

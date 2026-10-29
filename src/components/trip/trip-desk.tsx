@@ -968,7 +968,7 @@ export function TripDesk({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Import trip CSV?</DialogTitle>
+            <DialogTitle>Import trip file?</DialogTitle>
             <DialogDescription>
               This replaces everyone on the roster, every spend, and every paid-back
               entry on this trip. Join code stays the same.
@@ -988,7 +988,7 @@ export function TripDesk({
                   group,
                   profile,
                   body: {
-                    action: "import-trip-csv",
+                    action: csv.trimStart().replace(/^\uFEFF/, "").startsWith("{") ? "import-trip-json" : "import-trip-csv",
                     csv,
                     profileId: profile.id,
                   },
@@ -1000,7 +1000,7 @@ export function TripDesk({
                 })
               }}
             >
-              Replace from CSV
+              Replace from file
             </Button>
           </DialogFooter>
         </DialogContent>
